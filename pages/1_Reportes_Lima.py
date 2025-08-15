@@ -18,14 +18,19 @@ def validar_cabeceras(archivo_excel, nombre_hoja, cabeceras_esperadas):
 def procesar_archivos_excel(archivo_excel_cargado):
     log_output = []
     log_output.append("--- INICIO DEL PROCESO DE SEGMENTACIÓN Y VALIDACIÓN ---")
-    cabeceras_esenciales_reporte = ['AGENCIA', 'RUC', 'ALTAS', 'TOTAL A PAGAR']
+    cabeceras_esenciales_reporte = [
+        'RUC', 'AGENCIA', 'META', 'GRUPO', 'ALTAS', 'ARPU SIN IGV',
+        'CORTE 1', 'CUMPLIMIENTO ALTAS %', 'MARCHA BLANCA', 'MULTIPLICADOR',
+        'BONO 1 ARPU', 'MULTIPLICADOR FINAL', 'TOTAL A PAGAR'
+    ]
     if not validar_cabeceras(archivo_excel_cargado, 'Reporte CORTE 1', cabeceras_esenciales_reporte):
-        log_output.append("ALERTA DE ARCHIVO: Las cabeceras esperadas (como 'AGENCIA', 'RUC', etc.) no se encontraron en la primera fila de la hoja 'Reporte CORTE 1'.")
+        log_output.append("ALERTA DE ARCHIVO: Las cabeceras esperadas (como 'RUC', 'AGENCIA', 'META', etc.) no se encontraron en la primera fila de la hoja 'Reporte CORTE 1'.")
         log_output.append("Por favor, asegúrese de que los encabezados de su reporte estén en la Fila 1 del archivo Excel y vuelva a intentarlo.")
         return None, log_output
-    cabeceras_esenciales_base = ['COD_PEDIDO', 'DNI_CLIENTE', 'ASESOR']
+    # Para BASE solo exigimos 'ASESOR' (necesaria para el filtrado). El resto de columnas se usarán todas sin especificarlas.
+    cabeceras_esenciales_base = ['ASESOR']
     if not validar_cabeceras(archivo_excel_cargado, 'BASE', cabeceras_esenciales_base):
-        log_output.append("ALERTA DE ARCHIVO: Las cabeceras esperadas (como 'COD_PEDIDO', 'ASESOR', etc.) no se encontraron en la primera fila de la hoja 'BASE'.")
+        log_output.append("ALERTA DE ARCHIVO: La cabecera esperada (por ejemplo, 'ASESOR') no se encontró en la primera fila de la hoja 'BASE'.")
         log_output.append("Por favor, asegúrese de que los encabezados de su base estén en la Fila 1 del archivo Excel y vuelva a intentarlo.")
         return None, log_output
     log_output.append("Validación de cabeceras exitosa. Los encabezados se encontraron en la primera fila.")
@@ -44,13 +49,9 @@ def procesar_archivos_excel(archivo_excel_cargado):
         agencias_a_procesar = df_reporte_total['AGENCIA'].dropna().unique().tolist()
         log_output.append(f"Se encontraron {len(agencias_a_procesar)} agencias únicas para procesar.")
         mapeo_agencias_alias = {"EXPORTEL S.A.C.": ["EXPORTEL S.A.C.", "EXPORTEL PROVINCIA"]}
-        try:
-            columnas_base_deseadas = df_base_total.columns.tolist()
-            indice_final = columnas_base_deseadas.index('RECIBO1_PAGADO')
-            columnas_a_mantener_en_base = columnas_base_deseadas[:indice_final + 1]
-        except ValueError:
-            log_output.append("ERROR: La columna 'RECIBO1_PAGADO' no se encontró en la hoja 'BASE'.")
-            return None, log_output
+        # Usar TODAS las columnas de BASE sin recortar hasta 'RECIBO1_PAGADO'
+        columnas_a_mantener_en_base = df_base_total.columns.tolist()
+        log_output.append(f"BASE: Se utilizarán todas las {len(columnas_a_mantener_en_base)} columnas disponibles.")
         for agencia in agencias_a_procesar:
             reporte_agencia = df_reporte_total[df_reporte_total['AGENCIA'] == agencia].copy()
             if reporte_agencia.empty: continue
