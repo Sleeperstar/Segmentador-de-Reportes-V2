@@ -23,6 +23,26 @@ def validar_cabeceras(archivo_excel, nombre_hoja, cabeceras_esperadas):
         return True
     except Exception: return False
 
+def detectar_fila_cabeceras(archivo_excel, nombre_hoja, cabeceras_esperadas, max_filas=20):
+    """Devuelve el índice (0-based) de la fila que mejor coincide con las cabeceras esperadas.
+    Retorna None si no encuentra una coincidencia suficiente."""
+    try:
+        preview = pd.read_excel(archivo_excel, sheet_name=nombre_hoja, header=None, nrows=max_filas)
+    except Exception:
+        return None
+    esperadas_norm = {_normalizar_header_texto(c) for c in cabeceras_esperadas}
+    mejor_idx, mejor_match = None, -1
+    for i in range(len(preview)):
+        fila_vals = [_normalizar_header_texto(v) for v in list(preview.iloc[i].values)]
+        presentes = esperadas_norm.intersection(set(fila_vals))
+        if len(presentes) > mejor_match:
+            mejor_match = len(presentes)
+            mejor_idx = i
+    # Umbral: al menos 3 cabeceras esperadas presentes
+    if mejor_match >= 3:
+        return mejor_idx
+    return None
+
 def procesar_archivos_excel(archivo_excel_cargado):
     log_output = []
     log_output.append("--- INICIO DEL PROCESO DE SEGMENTACIÓN Y VALIDACIÓN ---")
@@ -31,8 +51,10 @@ def procesar_archivos_excel(archivo_excel_cargado):
         'CORTE 1', 'CUMPLIMIENTO ALTAS %', 'MARCHA BLANCA', 'MULTIPLICADOR',
         'BONO 1 ARPU', 'MULTIPLICADOR FINAL', 'TOTAL A PAGAR'
     ]
+    # Validación y posible detección automática de fila de cabeceras para 'Reporte CORTE 1'
+    header_row_reporte = 0
     if not validar_cabeceras(archivo_excel_cargado, 'Reporte CORTE 1', cabeceras_esenciales_reporte):
-        # Diagnóstico detallado
+        # Diagnóstico detallado y fallback de autodetección
         try:
             df_primera_fila_diag = pd.read_excel(archivo_excel_cargado, sheet_name='Reporte CORTE 1', header=None, nrows=1)
             reales_diag = [_normalizar_header_texto(col) for col in df_primera_fila_diag.iloc[0].values]
@@ -43,19 +65,30 @@ def procesar_archivos_excel(archivo_excel_cargado):
         log_output.append("ALERTA DE ARCHIVO: Las cabeceras esperadas no se detectaron en la primera fila de 'Reporte CORTE 1'.")
         log_output.append(f"Cabeceras detectadas (normalizadas): {reales_diag}")
         log_output.append(f"Cabeceras faltantes (normalizadas): {faltantes}")
-        log_output.append("Sugerencias: verifique espacios dobles, hojas con nombre exacto, celdas combinadas o una fila título antes de las cabeceras.")
-        return None, log_output
-    # Para BASE solo exigimos 'ASESOR' (necesaria para el filtrado). El resto de columnas se usarán todas sin especificarlas.
+        idx_auto = detectar_fila_cabeceras(archivo_excel_cargado, 'Reporte CORTE 1', cabeceras_esenciales_reporte)
+        if idx_auto is None:
+            log_output.append("No fue posible identificar automáticamente la fila de cabeceras en 'Reporte CORTE 1'.")
+            log_output.append("Sugerencias: verifique espacios dobles, nombre exacto de la hoja, celdas combinadas o filas de título antes de las cabeceras.")
+            return None, log_output
+        else:
+            header_row_reporte = idx_auto
+            log_output.append(f"Autodetección: se usará la fila {header_row_reporte + 1} como cabeceras para 'Reporte CORTE 1'.")
+    # Para BASE solo exigimos 'ASESOR'. Si no está en la primera fila, intentamos autodetectar la fila de cabeceras.
     cabeceras_esenciales_base = ['ASESOR']
+    header_row_base = 0
     if not validar_cabeceras(archivo_excel_cargado, 'BASE', cabeceras_esenciales_base):
-        log_output.append("ALERTA DE ARCHIVO: La cabecera esperada (por ejemplo, 'ASESOR') no se encontró en la primera fila de la hoja 'BASE'.")
-        log_output.append("Por favor, asegúrese de que los encabezados de su base estén en la Fila 1 del archivo Excel y vuelva a intentarlo.")
-        return None, log_output
+        idx_auto_base = detectar_fila_cabeceras(archivo_excel_cargado, 'BASE', cabeceras_esenciales_base)
+        if idx_auto_base is None:
+            log_output.append("ALERTA DE ARCHIVO: No se encontró la cabecera 'ASESOR' en la primera fila ni fue posible autodetectarla en la hoja 'BASE'.")
+            return None, log_output
+        else:
+            header_row_base = idx_auto_base
+            log_output.append(f"Autodetección: se usará la fila {header_row_base + 1} como cabeceras para 'BASE'.")
     log_output.append("Validación de cabeceras exitosa. Los encabezados se encontraron en la primera fila.")
     try:
         log_output.append("Leyendo datos completos del archivo...")
-        df_reporte_total = pd.read_excel(archivo_excel_cargado, sheet_name='Reporte CORTE 1')
-        df_base_total = pd.read_excel(archivo_excel_cargado, sheet_name='BASE')
+        df_reporte_total = pd.read_excel(archivo_excel_cargado, sheet_name='Reporte CORTE 1', header=header_row_reporte)
+        df_base_total = pd.read_excel(archivo_excel_cargado, sheet_name='BASE', header=header_row_base)
         df_reporte_total.columns = df_reporte_total.columns.str.strip().str.upper()
         df_base_total.columns = df_base_total.columns.str.strip().str.upper()
         log_output.append("Nombres de columnas estandarizados (sin espacios y en mayúsculas).")
