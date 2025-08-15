@@ -4,14 +4,22 @@ import pandas as pd
 import io
 import zipfile
 from datetime import datetime
+import re
 
 # --- Las funciones de lógica no cambian ---
+def _normalizar_header_texto(texto):
+    # Reemplaza NBSP por espacio normal, elimina espacios al borde, pasa a mayúsculas y colapsa espacios múltiples
+    s = str(texto).replace('\xa0', ' ')
+    s = s.strip().upper()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
 def validar_cabeceras(archivo_excel, nombre_hoja, cabeceras_esperadas):
     try:
         df_primera_fila = pd.read_excel(archivo_excel, sheet_name=nombre_hoja, header=None, nrows=1)
-        cabeceras_reales = [str(col).strip().upper() for col in df_primera_fila.iloc[0].values]
+        cabeceras_reales = [_normalizar_header_texto(col) for col in df_primera_fila.iloc[0].values]
         for cabecera in cabeceras_esperadas:
-            if cabecera.upper() not in cabeceras_reales: return False
+            if _normalizar_header_texto(cabecera) not in cabeceras_reales: return False
         return True
     except Exception: return False
 
@@ -24,8 +32,18 @@ def procesar_archivos_excel(archivo_excel_cargado):
         'BONO 1 ARPU', 'MULTIPLICADOR FINAL', 'TOTAL A PAGAR'
     ]
     if not validar_cabeceras(archivo_excel_cargado, 'Reporte CORTE 1', cabeceras_esenciales_reporte):
-        log_output.append("ALERTA DE ARCHIVO: Las cabeceras esperadas (como 'RUC', 'AGENCIA', 'META', etc.) no se encontraron en la primera fila de la hoja 'Reporte CORTE 1'.")
-        log_output.append("Por favor, asegúrese de que los encabezados de su reporte estén en la Fila 1 del archivo Excel y vuelva a intentarlo.")
+        # Diagnóstico detallado
+        try:
+            df_primera_fila_diag = pd.read_excel(archivo_excel_cargado, sheet_name='Reporte CORTE 1', header=None, nrows=1)
+            reales_diag = [_normalizar_header_texto(col) for col in df_primera_fila_diag.iloc[0].values]
+        except Exception:
+            reales_diag = []
+        esperadas_norm = [_normalizar_header_texto(c) for c in cabeceras_esenciales_reporte]
+        faltantes = [c for c in esperadas_norm if c not in reales_diag]
+        log_output.append("ALERTA DE ARCHIVO: Las cabeceras esperadas no se detectaron en la primera fila de 'Reporte CORTE 1'.")
+        log_output.append(f"Cabeceras detectadas (normalizadas): {reales_diag}")
+        log_output.append(f"Cabeceras faltantes (normalizadas): {faltantes}")
+        log_output.append("Sugerencias: verifique espacios dobles, hojas con nombre exacto, celdas combinadas o una fila título antes de las cabeceras.")
         return None, log_output
     # Para BASE solo exigimos 'ASESOR' (necesaria para el filtrado). El resto de columnas se usarán todas sin especificarlas.
     cabeceras_esenciales_base = ['ASESOR']
