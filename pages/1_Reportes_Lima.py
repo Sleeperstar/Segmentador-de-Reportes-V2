@@ -23,7 +23,7 @@ def validar_cabeceras(archivo_excel, nombre_hoja, cabeceras_esperadas):
         return True
     except Exception: return False
 
-def detectar_fila_cabeceras(archivo_excel, nombre_hoja, cabeceras_esperadas, max_filas=20):
+def detectar_fila_cabeceras(archivo_excel, nombre_hoja, cabeceras_esperadas, max_filas=100):
     """Devuelve el índice (0-based) de la fila que mejor coincide con las cabeceras esperadas.
     Retorna None si no encuentra una coincidencia suficiente."""
     try:
@@ -38,10 +38,35 @@ def detectar_fila_cabeceras(archivo_excel, nombre_hoja, cabeceras_esperadas, max
         if len(presentes) > mejor_match:
             mejor_match = len(presentes)
             mejor_idx = i
-    # Umbral: al menos 3 cabeceras esperadas presentes
-    if mejor_match >= 3:
+    # Umbral: al menos 2 cabeceras esperadas presentes (para permitir variaciones)
+    if mejor_match >= 2:
         return mejor_idx
     return None
+
+def _normalizar_nombre_hoja(nombre):
+    # Quita espacios extra y pasa a mayúsculas para comparar
+    return re.sub(r"\s+", " ", str(nombre).replace('\xa0',' ')).strip().upper()
+
+def encontrar_hoja(archivo_excel, candidatos):
+    """Busca una hoja en el archivo. Primero intenta coincidencia exacta por nombre,
+    luego coincidencia "contiene" (fuzzy) con cualquiera de los candidatos.
+    Devuelve el nombre real de la hoja o None si no la encuentra."""
+    try:
+        xf = pd.ExcelFile(archivo_excel)
+        hojas = xf.sheet_names
+    except Exception:
+        return None, []
+    hojas_norm_map = {h: _normalizar_nombre_hoja(h) for h in hojas}
+    cand_norm = [_normalizar_nombre_hoja(c) for c in candidatos]
+    # 1) Exacta
+    for h, hn in hojas_norm_map.items():
+        if hn in cand_norm:
+            return h, hojas
+    # 2) Contiene (fuzzy)
+    for h, hn in hojas_norm_map.items():
+        if any(c in hn for c in cand_norm):
+            return h, hojas
+    return None, hojas
 
 def procesar_archivos_excel(archivo_excel_cargado):
     log_output = []
@@ -51,44 +76,65 @@ def procesar_archivos_excel(archivo_excel_cargado):
         'CORTE 1', 'CUMPLIMIENTO ALTAS %', 'MARCHA BLANCA', 'MULTIPLICADOR',
         'BONO 1 ARPU', 'MULTIPLICADOR FINAL', 'TOTAL A PAGAR'
     ]
-    # Validación y posible detección automática de fila de cabeceras para 'Reporte CORTE 1'
+    # Detectamos la hoja del reporte (exacta o fuzzy)
+    nombre_hoja_reporte, hojas_disponibles = encontrar_hoja(archivo_excel_cargado, ['Reporte CORTE 1', 'CORTE 1'])
+    if not nombre_hoja_reporte:
+        log_output.append("No se encontró una hoja de reporte que coincida con 'Reporte CORTE 1' o contenga 'CORTE 1'.")
+        log_output.append(f"Hojas disponibles: {hojas_disponibles}")
+        return None, log_output
+    log_output.append(f"Hoja de reporte detectada: '{nombre_hoja_reporte}'. Hojas disponibles: {hojas_disponibles}")
+    # Validación y posible detección automática de fila de cabeceras para la hoja de reporte detectada
     header_row_reporte = 0
-    if not validar_cabeceras(archivo_excel_cargado, 'Reporte CORTE 1', cabeceras_esenciales_reporte):
+    if not validar_cabeceras(archivo_excel_cargado, nombre_hoja_reporte, cabeceras_esenciales_reporte):
         # Diagnóstico detallado y fallback de autodetección
         try:
-            df_primera_fila_diag = pd.read_excel(archivo_excel_cargado, sheet_name='Reporte CORTE 1', header=None, nrows=1)
+            df_primera_fila_diag = pd.read_excel(archivo_excel_cargado, sheet_name=nombre_hoja_reporte, header=None, nrows=3)
             reales_diag = [_normalizar_header_texto(col) for col in df_primera_fila_diag.iloc[0].values]
         except Exception:
             reales_diag = []
         esperadas_norm = [_normalizar_header_texto(c) for c in cabeceras_esenciales_reporte]
         faltantes = [c for c in esperadas_norm if c not in reales_diag]
-        log_output.append("ALERTA DE ARCHIVO: Las cabeceras esperadas no se detectaron en la primera fila de 'Reporte CORTE 1'.")
+        log_output.append(f"ALERTA DE ARCHIVO: Las cabeceras esperadas no se detectaron en la primera fila de '{nombre_hoja_reporte}'.")
         log_output.append(f"Cabeceras detectadas (normalizadas): {reales_diag}")
         log_output.append(f"Cabeceras faltantes (normalizadas): {faltantes}")
-        idx_auto = detectar_fila_cabeceras(archivo_excel_cargado, 'Reporte CORTE 1', cabeceras_esenciales_reporte)
+        # Mostrar vista previa de las primeras 3 filas (normalizadas) para diagnóstico
+        try:
+            preview = pd.read_excel(archivo_excel_cargado, sheet_name=nombre_hoja_reporte, header=None, nrows=3)
+            filas_preview = [[_normalizar_header_texto(v) for v in list(preview.iloc[i].values)] for i in range(len(preview))]
+            log_output.append(f"Preview primeras filas (normalizadas): {filas_preview}")
+        except Exception:
+            pass
+        idx_auto = detectar_fila_cabeceras(archivo_excel_cargado, nombre_hoja_reporte, cabeceras_esenciales_reporte)
         if idx_auto is None:
-            log_output.append("No fue posible identificar automáticamente la fila de cabeceras en 'Reporte CORTE 1'.")
+            log_output.append(f"No fue posible identificar automáticamente la fila de cabeceras en '{nombre_hoja_reporte}'.")
             log_output.append("Sugerencias: verifique espacios dobles, nombre exacto de la hoja, celdas combinadas o filas de título antes de las cabeceras.")
             return None, log_output
         else:
             header_row_reporte = idx_auto
-            log_output.append(f"Autodetección: se usará la fila {header_row_reporte + 1} como cabeceras para 'Reporte CORTE 1'.")
+            log_output.append(f"Autodetección: se usará la fila {header_row_reporte + 1} como cabeceras para '{nombre_hoja_reporte}'.")
+    # Detectamos la hoja BASE (exacta o fuzzy)
+    nombre_hoja_base, hojas_disponibles_base = encontrar_hoja(archivo_excel_cargado, ['BASE'])
+    if not nombre_hoja_base:
+        log_output.append("No se encontró la hoja 'BASE' en el archivo.")
+        log_output.append(f"Hojas disponibles: {hojas_disponibles_base}")
+        return None, log_output
+    log_output.append(f"Hoja BASE detectada: '{nombre_hoja_base}'.")
     # Para BASE solo exigimos 'ASESOR'. Si no está en la primera fila, intentamos autodetectar la fila de cabeceras.
     cabeceras_esenciales_base = ['ASESOR']
     header_row_base = 0
-    if not validar_cabeceras(archivo_excel_cargado, 'BASE', cabeceras_esenciales_base):
-        idx_auto_base = detectar_fila_cabeceras(archivo_excel_cargado, 'BASE', cabeceras_esenciales_base)
+    if not validar_cabeceras(archivo_excel_cargado, nombre_hoja_base, cabeceras_esenciales_base):
+        idx_auto_base = detectar_fila_cabeceras(archivo_excel_cargado, nombre_hoja_base, cabeceras_esenciales_base)
         if idx_auto_base is None:
-            log_output.append("ALERTA DE ARCHIVO: No se encontró la cabecera 'ASESOR' en la primera fila ni fue posible autodetectarla en la hoja 'BASE'.")
+            log_output.append(f"ALERTA DE ARCHIVO: No se encontró la cabecera 'ASESOR' en la primera fila ni fue posible autodetectarla en la hoja '{nombre_hoja_base}'.")
             return None, log_output
         else:
             header_row_base = idx_auto_base
-            log_output.append(f"Autodetección: se usará la fila {header_row_base + 1} como cabeceras para 'BASE'.")
+            log_output.append(f"Autodetección: se usará la fila {header_row_base + 1} como cabeceras para '{nombre_hoja_base}'.")
     log_output.append("Validación de cabeceras exitosa. Los encabezados se encontraron en la primera fila.")
     try:
         log_output.append("Leyendo datos completos del archivo...")
-        df_reporte_total = pd.read_excel(archivo_excel_cargado, sheet_name='Reporte CORTE 1', header=header_row_reporte)
-        df_base_total = pd.read_excel(archivo_excel_cargado, sheet_name='BASE', header=header_row_base)
+        df_reporte_total = pd.read_excel(archivo_excel_cargado, sheet_name=nombre_hoja_reporte, header=header_row_reporte)
+        df_base_total = pd.read_excel(archivo_excel_cargado, sheet_name=nombre_hoja_base, header=header_row_base)
         df_reporte_total.columns = df_reporte_total.columns.str.strip().str.upper()
         df_base_total.columns = df_base_total.columns.str.strip().str.upper()
         log_output.append("Nombres de columnas estandarizados (sin espacios y en mayúsculas).")
