@@ -178,7 +178,8 @@ def procesar_reporte_corte_2(archivo_excel_cargado):
             # Crear el archivo Excel para la agencia con formatos y colores
             output_buffer = io.BytesIO()
             with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer: # type: ignore
-                reporte_agencia_limpio.to_excel(writer, sheet_name='Reporte CORTE 2', index=False)
+                # Escribir datos SIN cabeceras (las escribiremos manualmente con formato)
+                reporte_agencia_limpio.to_excel(writer, sheet_name='Reporte CORTE 2', index=False, startrow=1, header=False)
                 base_agencia_final.to_excel(writer, sheet_name='BASE', index=False)
                 
                 # Aplicar formatos con colores en cabeceras
@@ -196,25 +197,28 @@ def procesar_reporte_corte_2(archivo_excel_cargado):
                         'font_color': 'white', 
                         'bg_color': '#0070C0',
                         'align': 'center',
-                        'valign': 'vcenter'
+                        'valign': 'vcenter',
+                        'border': 1
                     })
                     header_clawback_format = workbook.add_format({
                         'bold': True, 
                         'font_color': 'white', 
                         'bg_color': '#002060',
                         'align': 'center',
-                        'valign': 'vcenter'
+                        'valign': 'vcenter',
+                        'border': 1
                     })
                     header_default_format = workbook.add_format({
                         'bold': True, 
                         'bg_color': '#FFC000',
                         'align': 'center',
-                        'valign': 'vcenter'
+                        'valign': 'vcenter',
+                        'border': 1
                     })
 
                     header = reporte_agencia_limpio.columns.tolist()
                     
-                    # Aplicar formato y color a las cabeceras
+                    # Escribir cabeceras manualmente con formato y color en la fila 0
                     for col_idx, header_text in enumerate(header):
                         if header_text.startswith('PENALIDAD 1 -'):
                             worksheet_reporte.write(0, col_idx, header_text, header_penalidad_format)
@@ -223,7 +227,7 @@ def procesar_reporte_corte_2(archivo_excel_cargado):
                         else:
                             worksheet_reporte.write(0, col_idx, header_text, header_default_format)
                     
-                    # Aplicar formato de porcentaje a las columnas relevantes
+                    # Aplicar formato de porcentaje a las columnas relevantes (empezando desde fila 1)
                     cols_porcentaje = ['CUMPLIMIENTO ALTAS %', 'CLAWBACK 1 - CUMPLIMIENTO CORTE 2 %']
                     for col_name in cols_porcentaje:
                         if col_name in header:
