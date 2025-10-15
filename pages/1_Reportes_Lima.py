@@ -23,6 +23,15 @@ def _to_bio(archivo_data):
     except Exception:
         return io.BytesIO()
 
+def normalizar_nombre_agencia(nombre):
+    """
+    Normaliza el nombre de una agencia para comparaciones consistentes.
+    Convierte a mayúsculas y elimina espacios extras.
+    """
+    if pd.isna(nombre) or not isinstance(nombre, str):
+        return ""
+    return nombre.strip().upper()
+
 def detectar_fila_cabecera(archivo_data, nombre_hoja):
     """
     Detecta si las cabeceras están en la fila 0 o fila 1.
@@ -64,7 +73,7 @@ def procesar_archivos_excel(archivo_excel_cargado):
 
     # Detectar en qué fila están las cabeceras
     fila_cabecera = detectar_fila_cabecera(excel_bytes if excel_bytes is not None else archivo_excel_cargado, 'Reporte CORTE 1')
-    log_output.append(f"Cabeceras detectadas en la fila {fila_cabecera + 1} de la hoja 'Reporte CORTE 1'")
+    log_output.append(f"✓ Cabeceras detectadas en la fila {fila_cabecera + 1} de la hoja 'Reporte CORTE 1'")
 
     # Leer hojas con el header correcto
     try:
@@ -83,7 +92,15 @@ def procesar_archivos_excel(archivo_excel_cargado):
         # Estandarizar nombres de columnas
         df_reporte_total.columns = df_reporte_total.columns.str.strip().str.upper()
         df_base_total.columns = df_base_total.columns.str.strip().str.upper()
-        log_output.append("Columnas estandarizadas a mayúsculas sin espacios al borde.")
+        log_output.append("✓ Columnas estandarizadas a mayúsculas")
+        
+        # Normalizar nombres de agencias para evitar problemas de mayúsculas/minúsculas
+        if 'AGENCIA' in df_reporte_total.columns:
+            df_reporte_total['AGENCIA_NORMALIZADA'] = df_reporte_total['AGENCIA'].apply(normalizar_nombre_agencia)
+            df_reporte_total['AGENCIA_ORIGINAL'] = df_reporte_total['AGENCIA']  # Guardar original para el nombre del archivo
+        
+        if 'ASESOR' in df_base_total.columns:
+            df_base_total['ASESOR_NORMALIZADO'] = df_base_total['ASESOR'].apply(normalizar_nombre_agencia)
         
         # Validar que las cabeceras esperadas existan
         cabeceras_reporte_esperadas = ['RUC', 'AGENCIA', 'META', 'GRUPO', 'ALTAS', 'ARPU SIN IGV', 
@@ -91,102 +108,125 @@ def procesar_archivos_excel(archivo_excel_cargado):
                                        'MULTIPLICADOR', 'BONO 1 ARPU', 'MULTIPLICADOR FINAL', 'TOTAL A PAGAR']
         cabeceras_faltantes = [cab for cab in cabeceras_reporte_esperadas if cab not in df_reporte_total.columns]
         if cabeceras_faltantes:
-            log_output.append(f"ADVERTENCIA: Faltan las siguientes cabeceras: {', '.join(cabeceras_faltantes)}")
-            log_output.append(f"Cabeceras encontradas: {', '.join(df_reporte_total.columns.tolist())}")
+            log_output.append(f"⚠ ADVERTENCIA: Faltan cabeceras: {', '.join(cabeceras_faltantes)}")
+            log_output.append(f"  Cabeceras encontradas: {', '.join(df_reporte_total.columns.tolist())}")
+        else:
+            log_output.append(f"✓ Todas las cabeceras esperadas fueron encontradas")
     except Exception as e:
-        log_output.append(f"ERROR al leer hojas 'Reporte CORTE 1' y/o 'BASE': {e}")
+        log_output.append(f"✗ ERROR al leer hojas 'Reporte CORTE 1' y/o 'BASE': {e}")
         return None, log_output
 
     # Zip con archivos por agencia
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         # Obtener agencias desde la hoja de reporte
-        if 'AGENCIA' not in df_reporte_total.columns:
-            log_output.append("ERROR: La hoja 'Reporte CORTE 1' no tiene columna 'AGENCIA'.")
+        if 'AGENCIA_NORMALIZADA' not in df_reporte_total.columns:
+            log_output.append("✗ ERROR: No se pudo normalizar la columna 'AGENCIA'")
             return None, log_output
 
-        agencias = df_reporte_total['AGENCIA'].dropna().unique().tolist()
-        log_output.append(f"Agencias encontradas: {len(agencias)}")
+        agencias_normalizadas = df_reporte_total['AGENCIA_NORMALIZADA'].dropna().unique().tolist()
+        log_output.append(f"\n{'='*80}")
+        log_output.append(f"📊 PROCESANDO {len(agencias_normalizadas)} AGENCIAS")
+        log_output.append(f"{'='*80}\n")
 
-        # Alias opcional (si lo usas)
+        # Alias opcional (normalizados también)
         mapeo_agencias_alias = {
-            "EXPORTEL S.A.C.": ["EXPORTEL S.A.C.", "EXPORTEL PROVINCIA"]
+            normalizar_nombre_agencia("EXPORTEL S.A.C."): [
+                normalizar_nombre_agencia("EXPORTEL S.A.C."), 
+                normalizar_nombre_agencia("EXPORTEL PROVINCIA")
+            ]
         }
 
-        # Mantener todas las columnas de BASE
-        columnas_base = df_base_total.columns.tolist()
-        if 'ASESOR' not in df_base_total.columns:
-            log_output.append("ADVERTENCIA: La hoja 'BASE' no tiene columna 'ASESOR'. No se filtrará por agencia en BASE.")
+        # Mantener todas las columnas de BASE (excluyendo la normalizada)
+        columnas_base = [col for col in df_base_total.columns if col != 'ASESOR_NORMALIZADO']
+        
+        if 'ASESOR_NORMALIZADO' not in df_base_total.columns:
+            log_output.append("⚠ ADVERTENCIA: No se pudo normalizar la columna 'ASESOR' en BASE")
 
-        for agencia in agencias:
-            reporte_agencia = df_reporte_total[df_reporte_total['AGENCIA'] == agencia].copy()
+        agencias_exitosas = 0
+        agencias_con_descuadre = 0
+        
+        for agencia_norm in agencias_normalizadas:
+            # Obtener datos del reporte para esta agencia
+            reporte_agencia = df_reporte_total[df_reporte_total['AGENCIA_NORMALIZADA'] == agencia_norm].copy()
             if reporte_agencia.empty:
                 continue
 
-            # Filtrar BASE por ASESOR (si existe)
-            if 'ASESOR' in df_base_total.columns:
-                if agencia in mapeo_agencias_alias:
-                    nombres = mapeo_agencias_alias[agencia]
-                    base_agencia = df_base_total[df_base_total['ASESOR'].isin(nombres)]
+            # Obtener el nombre original para el archivo
+            nombre_original = reporte_agencia['AGENCIA_ORIGINAL'].iloc[0]
+
+            # Filtrar BASE por ASESOR normalizado
+            if 'ASESOR_NORMALIZADO' in df_base_total.columns:
+                if agencia_norm in mapeo_agencias_alias:
+                    nombres = mapeo_agencias_alias[agencia_norm]
+                    base_agencia = df_base_total[df_base_total['ASESOR_NORMALIZADO'].isin(nombres)]
                 else:
-                    base_agencia = df_base_total[df_base_total['ASESOR'] == agencia]
+                    base_agencia = df_base_total[df_base_total['ASESOR_NORMALIZADO'] == agencia_norm]
             else:
                 base_agencia = df_base_total
 
-            base_agencia_final = base_agencia[columnas_base]
+            base_agencia_final = base_agencia[columnas_base].copy()
 
-            # (Opcional) Log simple de conteos
+            # Log con validación mejorada
             try:
                 altas_reporte = int(pd.to_numeric(reporte_agencia.iloc[0].get('ALTAS', 0), errors='coerce') or 0)
                 registros_base = len(base_agencia_final)
-                status = "OK" if altas_reporte == registros_base else "REVISAR"
-                log_output.append(f"{agencia} | ALTAS: {altas_reporte} | BASE: {registros_base} | {status}")
-            except Exception:
-                pass
+                
+                if altas_reporte == registros_base:
+                    log_output.append(f"✓ {nombre_original:<45} │ ALTAS: {altas_reporte:>5} │ BASE: {registros_base:>5} │ ✓ OK")
+                    agencias_exitosas += 1
+                else:
+                    log_output.append(f"⚠ {nombre_original:<45} │ ALTAS: {altas_reporte:>5} │ BASE: {registros_base:>5} │ ⚠ DESCUADRE")
+                    agencias_con_descuadre += 1
+            except Exception as e:
+                log_output.append(f"✗ {nombre_original:<45} │ ERROR: {str(e)}")
+                agencias_con_descuadre += 1
 
-            # Crear Excel por agencia
+            # Remover columnas auxiliares antes de guardar
+            reporte_para_guardar = reporte_agencia.drop(columns=['AGENCIA_NORMALIZADA', 'AGENCIA_ORIGINAL'], errors='ignore')
+            
+            # Crear Excel por agencia con formatos simplificados
             output_buffer = io.BytesIO()
             with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:  # type: ignore
-                reporte_agencia.to_excel(writer, sheet_name='Reporte Agencia', index=False)  # type: ignore
-                base_agencia_final.to_excel(writer, sheet_name='BASE', index=False)         # type: ignore
+                reporte_para_guardar.to_excel(writer, sheet_name='Reporte Agencia', index=False)  # type: ignore
+                base_agencia_final.to_excel(writer, sheet_name='BASE', index=False)  # type: ignore
 
-                # Formatos bonitos si existen las columnas
+                # Aplicar solo formatos básicos para evitar errores de Excel
                 try:
                     workbook = writer.book
                     ws = writer.sheets['Reporte Agencia']
                     
-                    # Definir formatos
+                    # Formato de porcentaje simple
                     percent_fmt = workbook.add_format({'num_format': '0.00%'})
+                    # Formato de número con 2 decimales
                     number_fmt = workbook.add_format({'num_format': '#,##0.00'})
-                    currency_fmt = workbook.add_format({'num_format': 'S/ #,##0.00'})
                     
-                    headers = list(reporte_agencia.columns)
+                    headers = list(reporte_para_guardar.columns)
                     
-                    # Aplicar formato de porcentaje
+                    # Aplicar formato solo a las columnas clave
                     if 'CUMPLIMIENTO ALTAS %' in headers:
                         idx = headers.index('CUMPLIMIENTO ALTAS %')
                         ws.set_column(idx, idx, 20, percent_fmt)
                     
-                    # Aplicar formato de moneda/número a las columnas monetarias
-                    columnas_monetarias = ['ARPU SIN IGV', 'CORTE 1', 'BONO 1 ARPU', 'TOTAL A PAGAR']
-                    for col_name in columnas_monetarias:
-                        if col_name in headers:
-                            idx = headers.index(col_name)
-                            ws.set_column(idx, idx, 18, currency_fmt)
-                    
-                    # Aplicar formato numérico a multiplicadores
-                    columnas_numericas = ['MULTIPLICADOR', 'MULTIPLICADOR FINAL']
-                    for col_name in columnas_numericas:
-                        if col_name in headers:
-                            idx = headers.index(col_name)
-                            ws.set_column(idx, idx, 18, number_fmt)
+                    if 'TOTAL A PAGAR' in headers:
+                        idx = headers.index('TOTAL A PAGAR')
+                        ws.set_column(idx, idx, 18, number_fmt)
                 except Exception:
                     pass
 
-            # Nombre limpio de archivo
-            nombre_archivo = "".join(c for c in str(agencia) if c.isalnum() or c in (' ', '_')).rstrip()
+            # Nombre limpio de archivo usando el nombre original
+            nombre_archivo = "".join(c for c in str(nombre_original) if c.isalnum() or c in (' ', '_')).rstrip()
             zf.writestr(f"Reporte {nombre_archivo}.xlsx", output_buffer.getvalue())
 
+    # Resumen final del log
+    log_output.append(f"\n{'='*80}")
+    log_output.append(f"📋 RESUMEN DEL PROCESO")
+    log_output.append(f"{'='*80}")
+    log_output.append(f"✓ Agencias procesadas exitosamente: {agencias_exitosas}")
+    if agencias_con_descuadre > 0:
+        log_output.append(f"⚠ Agencias con descuadre: {agencias_con_descuadre}")
+    log_output.append(f"📁 Total de archivos generados: {len(agencias_normalizadas)}")
+    log_output.append(f"{'='*80}\n")
     log_output.append("--- FIN DEL PROCESO ---")
     zip_buffer.seek(0)
     return zip_buffer, log_output
@@ -199,22 +239,43 @@ st.info("💡 El sistema detecta automáticamente si las cabeceras están en la 
 uploaded_file = st.file_uploader("Sube tu archivo Excel de reportes de Lima", type=["xlsx"], key="lima_uploader")
 
 if uploaded_file is not None:
-    st.success(f"Archivo '{uploaded_file.name}' cargado exitosamente.")
-    if st.button("Procesar y Generar Reportes", type="primary"):
-        with st.spinner("Procesando..."):
+    st.success(f"✓ Archivo '{uploaded_file.name}' cargado exitosamente")
+    if st.button("🚀 Procesar y Generar Reportes", type="primary"):
+        with st.spinner("⏳ Procesando archivo..."):
             zip_file, log_data = procesar_archivos_excel(uploaded_file)
+        
         if zip_file:
-            st.success("¡Proceso completado!")
-            st.subheader("Log")
-            st.text_area("Detalle:", "\n".join(log_data), height=300)
-            st.subheader("Descargar Resultados")
+            st.success("✅ ¡Proceso completado exitosamente!")
+            
+            # Mostrar resumen en tarjetas
+            col1, col2 = st.columns(2)
+            
+            # Contar éxitos y errores del log
+            exitosas = sum(1 for line in log_data if "✓ OK" in line)
+            descuadres = sum(1 for line in log_data if "⚠ DESCUADRE" in line)
+            
+            with col1:
+                st.metric("Agencias Exitosas", exitosas, delta=None)
+            with col2:
+                if descuadres > 0:
+                    st.metric("Agencias con Descuadre", descuadres, delta=f"-{descuadres}", delta_color="inverse")
+                else:
+                    st.metric("Agencias con Descuadre", 0, delta="Todo OK")
+            
+            # Log detallado
+            with st.expander("📋 Ver Log Detallado", expanded=False):
+                st.code("\n".join(log_data), language=None)
+            
+            # Botón de descarga prominente
+            st.markdown("---")
             st.download_button(
-                label="Descargar todos los reportes (.zip)",
+                label="📥 Descargar todos los reportes (.zip)",
                 data=zip_file,
                 file_name=f"Reportes_Lima_Segmentados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                mime="application/zip"
+                mime="application/zip",
+                type="primary"
             )
         else:
-            st.error("Ocurrió un error al leer o procesar el archivo.")
-            st.subheader("Log")
-            st.text_area("Detalle del error:", "\n".join(log_data), height=300)
+            st.error("❌ Ocurrió un error al procesar el archivo")
+            with st.expander("📋 Ver Log de Errores", expanded=True):
+                st.code("\n".join(log_data), language=None)
