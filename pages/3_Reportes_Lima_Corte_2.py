@@ -218,11 +218,27 @@ def procesar_reporte_corte_2(archivo_excel_cargado):
 
                     header = reporte_agencia_limpio.columns.tolist()
                     
+                    # Definir las columnas que pertenecen a cada grupo (con y sin prefijo)
+                    columnas_penalidad_grupo = [
+                        'PENALIDAD 1 - CHURN 4.5%', 'PENALIDAD 1 - UMBRAL', 
+                        'PENALIDAD 1 - ALTAS PENALIZADAS', 'PENALIDAD 1 - PENALIDAD 1',
+                        'CHURN 4.5%', 'UMBRAL', 'ALTAS PENALIZADAS', 'ALTAS  PENALIZADAS', 'PENALIDAD 1'
+                    ]
+                    
+                    columnas_clawback_grupo = [
+                        'CLAWBACK 1 - UMBRAL 1', 'CLAWBACK 1 - CUMPLIMIENTO CORTE 2 %',
+                        'CLAWBACK 1 - MULTIPLICADOR CORTE 2', 'CLAWBACK 1 - CLAWBACK 1',
+                        'UMBRAL 1', 'CUMPLIMIENTO CORTE 2 %', 'MULTIPLICADOR CORTE 2', 
+                        'MULTIPLICADOR  CORTE 2', 'CLAWBACK 1'
+                    ]
+                    
                     # Escribir cabeceras manualmente con formato y color en la fila 0
                     for col_idx, header_text in enumerate(header):
-                        if header_text.startswith('PENALIDAD 1 -'):
+                        # Verificar si pertenece a PENALIDAD 1 (con prefijo o sin prefijo)
+                        if header_text.startswith('PENALIDAD 1 -') or header_text in columnas_penalidad_grupo:
                             worksheet_reporte.write(0, col_idx, header_text, header_penalidad_format)
-                        elif header_text.startswith('CLAWBACK 1 -'):
+                        # Verificar si pertenece a CLAWBACK 1 (con prefijo o sin prefijo)
+                        elif header_text.startswith('CLAWBACK 1 -') or header_text in columnas_clawback_grupo:
                             worksheet_reporte.write(0, col_idx, header_text, header_clawback_format)
                         else:
                             worksheet_reporte.write(0, col_idx, header_text, header_default_format)
