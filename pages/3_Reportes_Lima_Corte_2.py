@@ -175,22 +175,53 @@ def procesar_reporte_corte_2(archivo_excel_cargado):
             
             reporte_agencia_limpio.columns = new_cols
 
-            # Crear el archivo Excel para la agencia con formatos simplificados
+            # Crear el archivo Excel para la agencia con formatos y colores
             output_buffer = io.BytesIO()
             with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer: # type: ignore
                 reporte_agencia_limpio.to_excel(writer, sheet_name='Reporte CORTE 2', index=False)
                 base_agencia_final.to_excel(writer, sheet_name='BASE', index=False)
                 
-                # Aplicar formatos básicos
+                # Aplicar formatos con colores en cabeceras
                 try:
                     workbook = writer.book
                     worksheet_reporte = writer.sheets['Reporte CORTE 2']
 
-                    # Formatos simplificados
+                    # Formatos de datos
                     percent_format = workbook.add_format({'num_format': '0.00%'})
                     number_format = workbook.add_format({'num_format': '#,##0.00'})
+                    
+                    # Formatos de cabeceras con colores
+                    header_penalidad_format = workbook.add_format({
+                        'bold': True, 
+                        'font_color': 'white', 
+                        'bg_color': '#0070C0',
+                        'align': 'center',
+                        'valign': 'vcenter'
+                    })
+                    header_clawback_format = workbook.add_format({
+                        'bold': True, 
+                        'font_color': 'white', 
+                        'bg_color': '#002060',
+                        'align': 'center',
+                        'valign': 'vcenter'
+                    })
+                    header_default_format = workbook.add_format({
+                        'bold': True, 
+                        'bg_color': '#FFC000',
+                        'align': 'center',
+                        'valign': 'vcenter'
+                    })
 
                     header = reporte_agencia_limpio.columns.tolist()
+                    
+                    # Aplicar formato y color a las cabeceras
+                    for col_idx, header_text in enumerate(header):
+                        if header_text.startswith('PENALIDAD 1 -'):
+                            worksheet_reporte.write(0, col_idx, header_text, header_penalidad_format)
+                        elif header_text.startswith('CLAWBACK 1 -'):
+                            worksheet_reporte.write(0, col_idx, header_text, header_clawback_format)
+                        else:
+                            worksheet_reporte.write(0, col_idx, header_text, header_default_format)
                     
                     # Aplicar formato de porcentaje a las columnas relevantes
                     cols_porcentaje = ['CUMPLIMIENTO ALTAS %', 'CLAWBACK 1 - CUMPLIMIENTO CORTE 2 %']
