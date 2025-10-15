@@ -23,10 +23,38 @@ def _to_bio(archivo_data):
     except Exception:
         return io.BytesIO()
 
-# ================= Proceso principal simplificado =================
+def detectar_fila_cabecera(archivo_data, nombre_hoja):
+    """
+    Detecta si las cabeceras están en la fila 0 o fila 1.
+    Retorna el número de fila (0 o 1) donde están las cabeceras.
+    """
+    cabeceras_esperadas = ['RUC', 'AGENCIA', 'META', 'GRUPO', 'ALTAS', 'ARPU SIN IGV', 'CORTE 1']
+    
+    # Intentar fila 0
+    try:
+        df_test = pd.read_excel(_to_bio(archivo_data), sheet_name=nombre_hoja, header=0, nrows=0)
+        cols_fila_0 = [str(col).strip().upper() for col in df_test.columns]
+        if all(cab in cols_fila_0 for cab in cabeceras_esperadas[:3]):  # Verificar al menos las primeras 3
+            return 0
+    except Exception:
+        pass
+    
+    # Intentar fila 1
+    try:
+        df_test = pd.read_excel(_to_bio(archivo_data), sheet_name=nombre_hoja, header=1, nrows=0)
+        cols_fila_1 = [str(col).strip().upper() for col in df_test.columns]
+        if all(cab in cols_fila_1 for cab in cabeceras_esperadas[:3]):
+            return 1
+    except Exception:
+        pass
+    
+    # Por defecto, asumir fila 0
+    return 0
+
+# ================= Proceso principal =================
 def procesar_archivos_excel(archivo_excel_cargado):
     log_output = []
-    log_output.append("--- INICIO DEL PROCESO (MODO SIMPLE) ---")
+    log_output.append("--- INICIO DEL PROCESO DE REPORTES LIMA ---")
 
     # Capturar bytes una sola vez
     try:
@@ -34,11 +62,16 @@ def procesar_archivos_excel(archivo_excel_cargado):
     except Exception:
         excel_bytes = None
 
-    # Leer hojas directamente (sin validaciones complejas)
+    # Detectar en qué fila están las cabeceras
+    fila_cabecera = detectar_fila_cabecera(excel_bytes if excel_bytes is not None else archivo_excel_cargado, 'Reporte CORTE 1')
+    log_output.append(f"Cabeceras detectadas en la fila {fila_cabecera + 1} de la hoja 'Reporte CORTE 1'")
+
+    # Leer hojas con el header correcto
     try:
         df_reporte_total = pd.read_excel(
             _to_bio(excel_bytes if excel_bytes is not None else archivo_excel_cargado),
             sheet_name='Reporte CORTE 1',
+            header=fila_cabecera,
             engine='openpyxl'
         )
         df_base_total = pd.read_excel(
@@ -51,6 +84,15 @@ def procesar_archivos_excel(archivo_excel_cargado):
         df_reporte_total.columns = df_reporte_total.columns.str.strip().str.upper()
         df_base_total.columns = df_base_total.columns.str.strip().str.upper()
         log_output.append("Columnas estandarizadas a mayúsculas sin espacios al borde.")
+        
+        # Validar que las cabeceras esperadas existan
+        cabeceras_reporte_esperadas = ['RUC', 'AGENCIA', 'META', 'GRUPO', 'ALTAS', 'ARPU SIN IGV', 
+                                       'CORTE 1', 'CUMPLIMIENTO ALTAS %', 'MARCHA BLANCA', 
+                                       'MULTIPLICADOR', 'BONO 1 ARPU', 'MULTIPLICADOR FINAL', 'TOTAL A PAGAR']
+        cabeceras_faltantes = [cab for cab in cabeceras_reporte_esperadas if cab not in df_reporte_total.columns]
+        if cabeceras_faltantes:
+            log_output.append(f"ADVERTENCIA: Faltan las siguientes cabeceras: {', '.join(cabeceras_faltantes)}")
+            log_output.append(f"Cabeceras encontradas: {', '.join(df_reporte_total.columns.tolist())}")
     except Exception as e:
         log_output.append(f"ERROR al leer hojas 'Reporte CORTE 1' y/o 'BASE': {e}")
         return None, log_output
@@ -112,15 +154,32 @@ def procesar_archivos_excel(archivo_excel_cargado):
                 try:
                     workbook = writer.book
                     ws = writer.sheets['Reporte Agencia']
+                    
+                    # Definir formatos
                     percent_fmt = workbook.add_format({'num_format': '0.00%'})
                     number_fmt = workbook.add_format({'num_format': '#,##0.00'})
+                    currency_fmt = workbook.add_format({'num_format': 'S/ #,##0.00'})
+                    
                     headers = list(reporte_agencia.columns)
+                    
+                    # Aplicar formato de porcentaje
                     if 'CUMPLIMIENTO ALTAS %' in headers:
                         idx = headers.index('CUMPLIMIENTO ALTAS %')
-                        ws.set_column(idx, idx, 18, percent_fmt)
-                    if 'TOTAL A PAGAR' in headers:
-                        idx = headers.index('TOTAL A PAGAR')
-                        ws.set_column(idx, idx, 18, number_fmt)
+                        ws.set_column(idx, idx, 20, percent_fmt)
+                    
+                    # Aplicar formato de moneda/número a las columnas monetarias
+                    columnas_monetarias = ['ARPU SIN IGV', 'CORTE 1', 'BONO 1 ARPU', 'TOTAL A PAGAR']
+                    for col_name in columnas_monetarias:
+                        if col_name in headers:
+                            idx = headers.index(col_name)
+                            ws.set_column(idx, idx, 18, currency_fmt)
+                    
+                    # Aplicar formato numérico a multiplicadores
+                    columnas_numericas = ['MULTIPLICADOR', 'MULTIPLICADOR FINAL']
+                    for col_name in columnas_numericas:
+                        if col_name in headers:
+                            idx = headers.index(col_name)
+                            ws.set_column(idx, idx, 18, number_fmt)
                 except Exception:
                     pass
 
@@ -128,13 +187,14 @@ def procesar_archivos_excel(archivo_excel_cargado):
             nombre_archivo = "".join(c for c in str(agencia) if c.isalnum() or c in (' ', '_')).rstrip()
             zf.writestr(f"Reporte {nombre_archivo}.xlsx", output_buffer.getvalue())
 
-    log_output.append("--- FIN DEL PROCESO (MODO SIMPLE) ---")
+    log_output.append("--- FIN DEL PROCESO ---")
     zip_buffer.seek(0)
     return zip_buffer, log_output
 
 # =================== Interfaz Streamlit ===================
-st.title("Segmentador de Reportes - Lima (Simple)")
+st.title("Segmentador de Reportes - Lima")
 st.markdown("Sube el archivo consolidado de Lima para generar los reportes individuales por agencia.")
+st.info("💡 El sistema detecta automáticamente si las cabeceras están en la fila 1 o fila 2.")
 
 uploaded_file = st.file_uploader("Sube tu archivo Excel de reportes de Lima", type=["xlsx"], key="lima_uploader")
 
