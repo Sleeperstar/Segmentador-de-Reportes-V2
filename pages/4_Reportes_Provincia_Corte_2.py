@@ -6,9 +6,27 @@ import zipfile
 import re
 from datetime import datetime
 
-# --- Funciones de ayuda (reutilizadas y adaptadas) ---
+# --- Mapa fijo de Homologación de Zonas ---
+HOMOLOGACION_ZONAS = {
+    'AREQUIPA':    'SUR',
+    'JUNIN':       'SUR',
+    'CUSCO':       'SUR',
+    'LA LIBERTAD': 'NORTE',
+    'LAMBAYEQUE':  'NORTE',
+    'PIURA':       'NORTE',
+    'ANCASH':      'NORTE',
+}
+
+def get_zona_departamento(depto):
+    """Retorna la zona (NORTE/SUR) de un departamento, normalizando el nombre."""
+    if not isinstance(depto, str):
+        return None
+    depto_norm = depto.upper().strip().replace('.', '').replace(',', '')
+    return HOMOLOGACION_ZONAS.get(depto_norm, None)
+
+# --- Funciones de ayuda ---
 def normalizar_nombre(nombre):
-    """Convierte un nombre a un formato estándar: mayúsculas, sin puntos/comas y con espacios simples."""
+    """Convierte un nombre a formato estándar: mayúsculas, sin puntos/comas y con espacios simples."""
     if not isinstance(nombre, str): return ""
     nombre_limpio = nombre.upper().replace('.', '').replace(',', '').replace('-', '')
     return re.sub(r'\s+', ' ', nombre_limpio).strip()
@@ -20,28 +38,17 @@ def get_agencia_base(nombre_completo, lista_departamentos):
     """
     if not isinstance(nombre_completo, str):
         return ""
-    
-    # La lista de departamentos ya viene ordenada del más largo al más corto.
     for depto in lista_departamentos:
-        # Creamos un patrón para buscar el departamento al final del string,
-        # precedido de al menos un espacio. Es insensible a mayúsculas/minúsculas.
         pattern = r'\s+' + re.escape(depto) + '$'
-        
-        # Intentamos sustituir el patrón encontrado por una cadena vacía.
         cleaned_name, num_subs = re.subn(pattern, '', nombre_completo, flags=re.IGNORECASE)
-        
-        # Si se hizo una sustitución, encontramos el departamento.
         if num_subs > 0:
             return cleaned_name.strip()
-            
-    # Si no se encontró ningún departamento como sufijo, devolvemos el nombre original.
     return nombre_completo.strip()
 
-def procesar_provincia_corte_2(archivo_excel_cargado):
+def procesar_provincia_corte_2(archivo_excel_cargado, zona_seleccionada):
     log_output = []
-    log_output.append("--- INICIO DEL PROCESO: PROVINCIA CORTE 2 ---")
-    
-    # Mapa de alias para agencias con múltiples nombres de asesor
+    log_output.append(f"--- INICIO DEL PROCESO: PROVINCIA CORTE 2 | ZONA: {zona_seleccionada} ---")
+
     mapeo_asesor_alias = {
         'EXPORTEL SAC': ['EXPORTEL SAC', 'EXPORTEL PROVINCIA']
     }
@@ -73,6 +80,20 @@ def procesar_provincia_corte_2(archivo_excel_cargado):
         df_base_total = pd.read_excel(archivo_excel_cargado, sheet_name='BASE')
         df_base_total.columns = df_base_total.columns.str.strip().str.upper()
 
+        # --- FILTRO DE ZONA en la BASE ---
+        df_base_total['ZONA'] = df_base_total['DEPARTAMENTO'].apply(get_zona_departamento)
+
+        base_sin_zona = df_base_total['ZONA'].isna().sum()
+        if base_sin_zona > 0:
+            deptos_sin_zona = df_base_total[df_base_total['ZONA'].isna()]['DEPARTAMENTO'].unique().tolist()
+            log_output.append(f"ALERTA: {base_sin_zona} registros no tienen zona asignada. Departamentos: {deptos_sin_zona}")
+
+        df_base_filtrada = df_base_total[df_base_total['ZONA'] == zona_seleccionada].copy()
+        log_output.append(f"BASE filtrada por zona '{zona_seleccionada}': {len(df_base_filtrada)} de {len(df_base_total)} registros.")
+
+        # Obtener lista de asesores válidos en la zona para filtrar el reporte
+        asesores_en_zona = set(df_base_filtrada['ASESOR'].apply(normalizar_nombre).tolist())
+
         lista_departamentos = df_base_total['DEPARTAMENTO'].dropna().unique().tolist()
         lista_departamentos.sort(key=len, reverse=True)
         log_output.append(f"Detectados {len(lista_departamentos)} departamentos para limpieza de nombres.")
@@ -81,10 +102,27 @@ def procesar_provincia_corte_2(archivo_excel_cargado):
         if not col_agencia_reporte:
             log_output.append("ERROR: No se encontró la columna 'AGENCIA' en 'Reporte CORTE 2'.")
             return None, log_output
-        
-        df_reporte_total['AGENCIA_BASE'] = df_reporte_total[col_agencia_reporte].apply(lambda x: get_agencia_base(x, lista_departamentos))
+
+        df_reporte_total['AGENCIA_BASE'] = df_reporte_total[col_agencia_reporte].apply(
+            lambda x: get_agencia_base(x, lista_departamentos)
+        )
         df_reporte_total['AGENCIA_BASE_NORMALIZADA'] = df_reporte_total['AGENCIA_BASE'].apply(normalizar_nombre)
-        df_base_total['ASESOR_NORMALIZADO'] = df_base_total['ASESOR'].apply(normalizar_nombre)
+        df_base_filtrada['ASESOR_NORMALIZADO'] = df_base_filtrada['ASESOR'].apply(normalizar_nombre)
+
+        # --- FILTRO DE ZONA en el REPORTE ---
+        # Obtenemos las agencias que tienen registros en la BASE filtrada por zona,
+        # incluyendo alias del mapa
+        agencias_en_zona = set(df_base_filtrada['ASESOR_NORMALIZADO'].tolist())
+        # Agregar también los alias inversos
+        for agencia_principal, aliases in mapeo_asesor_alias.items():
+            aliases_norm = [normalizar_nombre(a) for a in aliases]
+            if any(a in agencias_en_zona for a in aliases_norm):
+                agencias_en_zona.add(normalizar_nombre(agencia_principal))
+
+        df_reporte_filtrado = df_reporte_total[
+            df_reporte_total['AGENCIA_BASE_NORMALIZADA'].isin(agencias_en_zona)
+        ].copy()
+        log_output.append(f"REPORTE filtrado por zona '{zona_seleccionada}': {len(df_reporte_filtrado)} de {len(df_reporte_total)} filas.")
 
     except Exception as e:
         log_output.append(f"ERROR al leer o preparar datos: {e}")
@@ -93,105 +131,132 @@ def procesar_provincia_corte_2(archivo_excel_cargado):
     # --- 3. Proceso de Segmentación ---
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-        agencias_a_procesar = df_reporte_total['AGENCIA_BASE_NORMALIZADA'].dropna().unique().tolist()
-        log_output.append(f"Se encontraron {len(agencias_a_procesar)} agencias únicas para procesar.")
+        agencias_a_procesar = df_reporte_filtrado['AGENCIA_BASE_NORMALIZADA'].dropna().unique().tolist()
+        log_output.append(f"Se encontraron {len(agencias_a_procesar)} agencias en zona '{zona_seleccionada}' para procesar.")
 
         for agencia_norm in agencias_a_procesar:
-            reporte_agencia = df_reporte_total[df_reporte_total['AGENCIA_BASE_NORMALIZADA'] == agencia_norm].copy()
-            
+            reporte_agencia = df_reporte_filtrado[
+                df_reporte_filtrado['AGENCIA_BASE_NORMALIZADA'] == agencia_norm
+            ].copy()
+
             # --- Lógica de cruce con mapa de alias ---
             if agencia_norm in mapeo_asesor_alias:
                 nombres_a_buscar = mapeo_asesor_alias[agencia_norm]
-                base_agencia = df_base_total[df_base_total['ASESOR_NORMALIZADO'].isin(nombres_a_buscar)].copy()
+                base_agencia = df_base_filtrada[
+                    df_base_filtrada['ASESOR_NORMALIZADO'].isin(nombres_a_buscar)
+                ].copy()
             else:
-                base_agencia = df_base_total[df_base_total['ASESOR_NORMALIZADO'] == agencia_norm].copy()
+                base_agencia = df_base_filtrada[
+                    df_base_filtrada['ASESOR_NORMALIZADO'] == agencia_norm
+                ].copy()
 
-            if reporte_agencia.empty: continue
-            
-            # --- INICIO: Bloque de validación ---
+            if reporte_agencia.empty:
+                continue
+
+            # --- Bloque de validación ---
             try:
-                # Encontrar la columna 'ALTAS' en el MultiIndex del reporte
                 col_altas = next((col for col in reporte_agencia.columns if 'ALTAS' in col[1]), None)
                 if col_altas:
-                    altas_reporte = pd.to_numeric(reporte_agencia[col_altas], errors='coerce').fillna(0).sum() # type: ignore
+                    altas_reporte = pd.to_numeric(reporte_agencia[col_altas], errors='coerce').fillna(0).sum()
                     registros_base = len(base_agencia)
-                    if int(altas_reporte) == registros_base: # type: ignore
-                        log_output.append(f"ÉXITO    | {agencia_norm:<40} | ALTAS: {int(altas_reporte):<5} | Registros BASE: {registros_base:<5} | OK") # type: ignore
+                    if int(altas_reporte) == registros_base:
+                        log_output.append(f"ÉXITO    | {agencia_norm:<40} | ALTAS: {int(altas_reporte):<5} | Registros BASE: {registros_base:<5} | OK")
                     else:
-                        log_output.append(f"DESCUADRE | {agencia_norm:<40} | ALTAS: {int(altas_reporte):<5} | Registros BASE: {registros_base:<5} | REVISAR") # type: ignore
+                        log_output.append(f"DESCUADRE | {agencia_norm:<40} | ALTAS: {int(altas_reporte):<5} | Registros BASE: {registros_base:<5} | REVISAR")
                 else:
                     log_output.append(f"INFO     | {agencia_norm:<40} | No se pudo encontrar la columna ALTAS para validar.")
             except Exception as e:
                 log_output.append(f"Error validando la agencia '{agencia_norm}': {e}")
-            # --- FIN: Bloque de validación ---
-            
-            # --- INICIO: Corrección de formato de cabeceras y columnas ---
-            
-            # 1. Obtener el nombre original ANTES de eliminar la columna auxiliar.
-            #    Se accede a la columna por su nombre de tupla en el MultiIndex.
-            nombre_original_agencia = reporte_agencia[('AGENCIA_BASE', '')].iloc[0] # type: ignore
 
-            # 2. Eliminar las columnas auxiliares.
-            reporte_agencia = reporte_agencia.drop(columns=[('AGENCIA_BASE', ''), ('AGENCIA_BASE_NORMALIZADA', '')], errors='ignore')
+            # --- Corrección de formato de cabeceras ---
+            nombre_original_agencia = reporte_agencia[('AGENCIA_BASE', '')].iloc[0]
+            reporte_agencia = reporte_agencia.drop(
+                columns=[('AGENCIA_BASE', ''), ('AGENCIA_BASE_NORMALIZADA', '')], errors='ignore'
+            )
 
-            # 3. Aplanar las cabeceras de dos niveles en una sola, de forma limpia.
             new_cols = []
             for col in reporte_agencia.columns:
                 level1 = str(col[0]).strip()
                 level2 = str(col[1]).strip().replace('\n', ' ')
-                # Si la cabecera superior es 'Unnamed' o un duplicado, usar solo la inferior.
                 if 'unnamed' in level1.lower() or level1 == level2:
                     new_cols.append(level2)
                 else:
                     new_cols.append(f"{level1} - {level2}")
             reporte_agencia.columns = new_cols
-            
-            reporte_agencia_final = reporte_agencia # Renombrar para claridad
+            reporte_agencia_final = reporte_agencia
 
-            # --- FIN: Corrección de formato ---
-
+            # --- Generación del archivo Excel ---
             output_buffer = io.BytesIO()
-            with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer: # type: ignore
+            with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
                 reporte_agencia_final.to_excel(writer, sheet_name='Reporte CORTE 2', index=False)
-                base_agencia.drop(columns=['ASESOR_NORMALIZADO'], errors='ignore').to_excel(writer, sheet_name='BASE', index=False)
-                
-                workbook, worksheet = writer.book, writer.sheets['Reporte CORTE 2']
+                base_agencia.drop(
+                    columns=['ASESOR_NORMALIZADO', 'ZONA'], errors='ignore'
+                ).to_excel(writer, sheet_name='BASE', index=False)
+
+                workbook = writer.book
+                worksheet = writer.sheets['Reporte CORTE 2']
                 percent_format = workbook.add_format({'num_format': '0.00%'})
                 header_penalidad = workbook.add_format({'bold': True, 'font_color': 'white', 'fg_color': '#0070C0', 'border': 1})
-                header_clawback = workbook.add_format({'bold': True, 'font_color': 'white', 'fg_color': '#002060', 'border': 1})
-                default_header = workbook.add_format({'bold': True, 'fg_color': '#FFC000', 'border': 1})
+                header_clawback  = workbook.add_format({'bold': True, 'font_color': 'white', 'fg_color': '#002060', 'border': 1})
+                default_header   = workbook.add_format({'bold': True, 'fg_color': '#FFC000', 'border': 1})
 
                 header = reporte_agencia_final.columns.tolist()
                 for i, h_text in enumerate(header):
-                    if h_text.startswith('PENALIDAD 1 -'): worksheet.write(0, i, h_text, header_penalidad)
-                    elif h_text.startswith('CLAWBACK 1 -'): worksheet.write(0, i, h_text, header_clawback)
-                    else: worksheet.write(0, i, h_text, default_header)
+                    if h_text.startswith('PENALIDAD 1 -'):
+                        worksheet.write(0, i, h_text, header_penalidad)
+                    elif h_text.startswith('CLAWBACK 1 -'):
+                        worksheet.write(0, i, h_text, header_clawback)
+                    else:
+                        worksheet.write(0, i, h_text, default_header)
 
                 for col_name in ['Cumplimiento Altas %', 'CLAWBACK 1 - Cumplimiento Corte 2 %']:
                     try:
                         worksheet.set_column(header.index(col_name), header.index(col_name), 18, percent_format)
-                    except ValueError: pass
-            
-            nombre_archivo_limpio = "".join(c for c in nombre_original_agencia if c.isalnum() or c in (' ', '_')).rstrip()
-            zf.writestr(f"Reporte Provincia Corte 2 {nombre_archivo_limpio}.xlsx", output_buffer.getvalue())
+                    except ValueError:
+                        pass
+
+            nombre_archivo_limpio = "".join(
+                c for c in nombre_original_agencia if c.isalnum() or c in (' ', '_')
+            ).rstrip()
+            zf.writestr(
+                f"Reporte Provincia Corte 2 {nombre_archivo_limpio}.xlsx",
+                output_buffer.getvalue()
+            )
 
     log_output.append("--- FIN DEL PROCESO ---")
     zip_buffer.seek(0)
     return zip_buffer, log_output
+
 
 # --- Interfaz de Usuario ---
 st.title("Segmentador de Reportes - Provincia Corte 2")
 st.markdown("Sube el archivo consolidado de **Provincia CORTE 2** para generar los reportes individuales.")
 st.warning("El archivo debe contener las hojas 'Reporte CORTE 2' y 'BASE'.")
 
-uploaded_file = st.file_uploader("Sube tu archivo Excel de Provincia CORTE 2", type=["xlsx"], key="provincia_corte_2_uploader")
+# --- Selector de Zona ---
+zona = st.selectbox(
+    "Selecciona la Zona a procesar:",
+    options=["NORTE", "SUR"],
+    index=0,
+    help="Filtra tanto el Reporte como la BASE por la zona geográfica seleccionada."
+)
+
+# Mostrar los departamentos correspondientes a la zona seleccionada
+deptos_zona = [d for d, z in HOMOLOGACION_ZONAS.items() if z == zona]
+st.info(f"Departamentos incluidos en zona **{zona}**: {', '.join(sorted(deptos_zona))}")
+
+uploaded_file = st.file_uploader(
+    "Sube tu archivo Excel de Provincia CORTE 2",
+    type=["xlsx"],
+    key="provincia_corte_2_uploader"
+)
 
 if uploaded_file:
     st.success(f"Archivo '{uploaded_file.name}' cargado.")
     if st.button("Procesar y Generar Reportes", type="primary"):
-        with st.spinner("Procesando archivo de Provincia Corte 2..."):
-            zip_file, log_data = procesar_provincia_corte_2(uploaded_file)
-        
+        with st.spinner(f"Procesando archivo de Provincia Corte 2 - Zona {zona}..."):
+            zip_file, log_data = procesar_provincia_corte_2(uploaded_file, zona)
+
         if zip_file:
             st.success("¡Proceso completado!")
             st.subheader("Log de Validación")
@@ -200,8 +265,9 @@ if uploaded_file:
             st.download_button(
                 label="Descargar todos los reportes (.zip)",
                 data=zip_file,
-                file_name=f"Reportes_Provincia_Corte_2_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                mime="application/zip")
+                file_name=f"Reportes_Provincia_Corte_2_{zona}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                mime="application/zip"
+            )
         else:
             st.error("Ocurrió un error al procesar el archivo.")
-            st.text_area("Log de Errores:", "\n".join(log_data), height=300) 
+            st.text_area("Log de Errores:", "\n".join(log_data), height=300)
