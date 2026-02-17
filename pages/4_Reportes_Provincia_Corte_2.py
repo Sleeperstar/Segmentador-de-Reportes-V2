@@ -17,11 +17,19 @@ HOMOLOGACION_ZONAS = {
     'ANCASH':      'NORTE',
 }
 
+def quitar_tildes(texto):
+    """Elimina tildes y caracteres diacríticos de un string."""
+    import unicodedata
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', texto)
+        if unicodedata.category(c) != 'Mn'
+    )
+
 def get_zona_departamento(depto):
     """Retorna la zona (NORTE/SUR) de un departamento, normalizando el nombre."""
     if not isinstance(depto, str):
         return None
-    depto_norm = depto.upper().strip().replace('.', '').replace(',', '')
+    depto_norm = quitar_tildes(depto.upper().strip().replace('.', '').replace(',', ''))
     return HOMOLOGACION_ZONAS.get(depto_norm, None)
 
 # --- Funciones de ayuda ---
