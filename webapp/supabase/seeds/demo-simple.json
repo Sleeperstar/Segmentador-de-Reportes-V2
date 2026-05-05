@@ -1,0 +1,35 @@
+{
+  "inputs": {
+    "fileNamePattern": "(?<base>.*?)(?: (?<mes>\\w+) (?<anio>\\d{4}))?$",
+    "derivedVariables": [
+      { "name": "PERIODO_COMI", "from": "fileName", "transform": "monthYearToYYYYMM" }
+    ]
+  },
+  "steps": [
+    {
+      "id": "detalle_raw",
+      "type": "load_sheet",
+      "sheet": "Detalle",
+      "headerDetection": {
+        "strategy": "auto",
+        "expectedColumns": ["AGENCIA"]
+      }
+    },
+    {
+      "id": "segmenta",
+      "type": "split_by_column",
+      "reportSources": [],
+      "baseSource": "detalle_raw",
+      "agencyColumn": { "report": "AGENCIA" }
+    },
+    {
+      "id": "salida",
+      "type": "write_output",
+      "perAgency": {
+        "sheets": [{ "name": "Detalle", "from": "detalle_raw" }],
+        "fileNameTemplate": "Reporte {AGENCIA}.xlsx"
+      },
+      "zipFileNameTemplate": "Reportes segmentados.zip"
+    }
+  ]
+}

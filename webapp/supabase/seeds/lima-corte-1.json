@@ -1,0 +1,105 @@
+{
+  "inputs": {
+    "fileNamePattern": "Reportes AGENCIAS? LIMA Corte (?<corte>\\d+) (?<mes>\\w+) (?<anio>\\d{4})",
+    "derivedVariables": [
+      { "name": "PERIODO_COMI", "from": "fileName", "transform": "monthYearToYYYYMM" }
+    ]
+  },
+  "steps": [
+    {
+      "id": "horizontal",
+      "type": "load_sheet",
+      "sheet": "Reporte CORTE 1 Horizontal",
+      "headerDetection": {
+        "strategy": "auto",
+        "expectedColumns": ["AGENCIA", "ALTAS"]
+      }
+    },
+    {
+      "id": "vertical",
+      "type": "load_sheet",
+      "sheet": "Reporte CORTE 1 Vertical",
+      "headerDetection": {
+        "strategy": "auto",
+        "expectedColumns": ["AGENCIA", "ALTAS"]
+      }
+    },
+    {
+      "id": "marcha_blanca",
+      "type": "load_sheet",
+      "sheet": "Reporte CORTE 1 Marcha Blanca",
+      "headerDetection": {
+        "strategy": "auto",
+        "expectedColumns": ["AGENCIA", "ALTAS"]
+      }
+    },
+    {
+      "id": "base_raw",
+      "type": "load_sheet",
+      "sheet": "BASE",
+      "headerDetection": {
+        "strategy": "auto",
+        "expectedColumns": ["COD_PEDIDO", "ASESOR", "CANAL", "TIPO_ESTADO", "PERIODO_COMI"]
+      }
+    },
+    {
+      "id": "base",
+      "type": "filter_rows",
+      "source": "base_raw",
+      "filters": [
+        { "column": "CANAL", "op": "equals", "value": "Agencias" },
+        { "column": "TIPO_ESTADO", "op": "in", "value": ["Validado", "Rescate"] },
+        { "column": "PERIODO_COMI", "op": "equals", "value": "$PERIODO_COMI" }
+      ]
+    },
+    {
+      "id": "segmenta",
+      "type": "split_by_column",
+      "reportSources": ["horizontal", "vertical", "marcha_blanca"],
+      "baseSource": "base",
+      "agencyColumn": { "report": "AGENCIA", "base": "ASESOR" },
+      "aliases": [
+        { "canonical": "EXPORTEL S.A.C.", "variants": ["EXPORTEL S.A.C.", "EXPORTEL PROVINCIA"] }
+      ]
+    },
+    {
+      "id": "valida",
+      "type": "validate",
+      "rules": [
+        {
+          "name": "altas_3_hojas_vs_base_por_agencia",
+          "left": {
+            "aggregate": "sum",
+            "column": "ALTAS",
+            "from": ["horizontal", "vertical", "marcha_blanca"],
+            "scope": "per_agency"
+          },
+          "right": {
+            "aggregate": "count",
+            "column": "COD_PEDIDO",
+            "from": "base",
+            "scope": "per_agency"
+          },
+          "onMismatch": "warn"
+        }
+      ]
+    },
+    {
+      "id": "salida",
+      "type": "write_output",
+      "perAgency": {
+        "sheets": [
+          { "name": "BASE", "from": "base" },
+          { "name": "Horizontal", "from": "horizontal" },
+          { "name": "Vertical", "from": "vertical" },
+          { "name": "Marcha Blanca", "from": "marcha_blanca" }
+        ],
+        "fileNameTemplate": "Reporte {AGENCIA} Corte 1 {PERIODO_COMI}.xlsx",
+        "formats": [
+          { "columns": ["ALTAS"], "format": "integer" }
+        ]
+      },
+      "zipFileNameTemplate": "Reportes AGENCIA LIMA Corte 1 {PERIODO_COMI}.zip"
+    }
+  ]
+}
