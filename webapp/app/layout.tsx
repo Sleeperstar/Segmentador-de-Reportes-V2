@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Segmentador de Reportes | WIN Empresas",
+  title: "Segmentador de Reportes | WIN Internet",
   description:
-    "Automatización de procesamiento y segmentación de reportes por agencia para WIN Empresas.",
+    "Automatización de procesamiento y segmentación de reportes por agencia para WIN Internet.",
 };
 
 export default function RootLayout({

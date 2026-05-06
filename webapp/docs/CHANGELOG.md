@@ -4,6 +4,27 @@ Este documento registra los cambios más importantes realizados en el proyecto d
 
 ---
 
+## [v0.5] — 2026-05-05
+
+### Nueva funcionalidad: Resaltado de cabeceras
+
+- **Defaults globales**: en todas las hojas generadas, las columnas cuyo nombre contenga:
+  - `Penalidad` → fondo `#0070C0` (azul claro), letra blanca.
+  - `Clawback` → fondo `#002060` (azul oscuro), letra blanca.
+- **Reglas custom por plantilla**: nueva sección **"Resaltado de cabeceras"** en el paso 6 del wizard de admin permite añadir reglas adicionales o sobrescribir los defaults. Cada regla define:
+  - Lista de términos (case-insensitive, sin tildes, match por substring).
+  - Color de relleno y de fuente en formato hex `#RRGGBB`.
+- **Prioridad**: las reglas custom se evalúan antes que los defaults; la primera que matchea gana. Sin match → naranja institucional `#FF6B00`.
+- **Cambios técnicos**:
+  - Nuevo tipo `HeaderHighlight` y campo `WriteOutputStep.perAgency.headerHighlights` en `lib/pipeline/types.ts`.
+  - Eliminado el campo huérfano `OutputFormat.headerStyle` que nunca se implementó.
+  - Helpers `resolveHeaderStyle` y `hexToArgb` en `lib/pipeline/steps/write-output.ts`.
+  - Validación de formato de hex en `lib/pipeline/validator.ts`.
+  - 6 tests adicionales en `lib/pipeline/steps/write-output.test.ts` (87 tests verdes en total).
+- **Migración**: ninguna. Las plantillas existentes funcionan sin tocarse; los defaults aplican automáticamente desde la próxima ejecución.
+
+---
+
 ## [v0.4] — 2026-04-28 (FASE 4 y FASE 5)
 
 ### Optimizaciones (FASE 4)

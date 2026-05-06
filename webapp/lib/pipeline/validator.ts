@@ -117,6 +117,42 @@ function validateStepShape(step: PipelineStep, path: string, issues: ValidationI
       }
       if (!step.headerDetection) {
         issues.push({ path: `${path}.headerDetection`, message: "Configuración requerida." });
+      } else {
+        const hd = step.headerDetection as {
+          strategy?: string;
+          expectedColumns?: unknown;
+          row?: unknown;
+          rows?: unknown;
+        };
+        if (hd.strategy === "auto") {
+          if (!Array.isArray(hd.expectedColumns) || hd.expectedColumns.length === 0) {
+            issues.push({
+              path: `${path}.headerDetection.expectedColumns`,
+              message:
+                'La estrategia "auto" requiere al menos una columna esperada. ' +
+                'Agrega columnas que sepas que existen en la cabecera (ej: "AGENCIA, ALTAS").',
+            });
+          }
+        } else if (hd.strategy === "fixed_row") {
+          if (typeof hd.row !== "number" || hd.row < 1) {
+            issues.push({
+              path: `${path}.headerDetection.row`,
+              message: 'La estrategia "fixed_row" requiere un número de fila >= 1.',
+            });
+          }
+        } else if (hd.strategy === "multi_level") {
+          if (
+            !Array.isArray(hd.rows) ||
+            hd.rows.length === 0 ||
+            !hd.rows.every((r) => typeof r === "number" && r >= 1)
+          ) {
+            issues.push({
+              path: `${path}.headerDetection.rows`,
+              message:
+                'La estrategia "multi_level" requiere un arreglo con al menos un número de fila >= 1.',
+            });
+          }
+        }
       }
       break;
     case "filter_rows":
@@ -172,6 +208,54 @@ function validateStepShape(step: PipelineStep, path: string, issues: ValidationI
           message: "Al menos una hoja de salida requerida.",
         });
       }
+      if (step.perAgency?.headerHighlights !== undefined) {
+        const highlights = step.perAgency.headerHighlights as unknown;
+        if (!Array.isArray(highlights)) {
+          issues.push({
+            path: `${path}.perAgency.headerHighlights`,
+            message: "Debe ser un arreglo.",
+          });
+        } else {
+          highlights.forEach((rule, i) => {
+            const rulePath = `${path}.perAgency.headerHighlights[${i}]`;
+            if (typeof rule !== "object" || rule === null) {
+              issues.push({ path: rulePath, message: "Cada regla debe ser un objeto." });
+              return;
+            }
+            const r = rule as {
+              terms?: unknown;
+              fillColor?: unknown;
+              fontColor?: unknown;
+            };
+            if (
+              !Array.isArray(r.terms) ||
+              r.terms.length === 0 ||
+              !r.terms.every((t) => typeof t === "string" && t.trim() !== "")
+            ) {
+              issues.push({
+                path: `${rulePath}.terms`,
+                message: "Debe ser un arreglo no vacío de strings.",
+              });
+            }
+            if (typeof r.fillColor !== "string" || !isValidHexColor(r.fillColor)) {
+              issues.push({
+                path: `${rulePath}.fillColor`,
+                message: 'Color de relleno inválido. Usa formato "#RRGGBB" o "#RGB".',
+              });
+            }
+            if (typeof r.fontColor !== "string" || !isValidHexColor(r.fontColor)) {
+              issues.push({
+                path: `${rulePath}.fontColor`,
+                message: 'Color de fuente inválido. Usa formato "#RRGGBB" o "#RGB".',
+              });
+            }
+          });
+        }
+      }
       break;
   }
+}
+
+function isValidHexColor(color: string): boolean {
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color.trim());
 }

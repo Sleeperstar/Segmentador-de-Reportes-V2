@@ -56,6 +56,17 @@ export function readSheetToDataset(
     case "fixed_row":
       return buildDatasetFromHeaders(matrix, detection.row, ws.name, detection);
     case "auto": {
+      if (
+        !detection.expectedColumns ||
+        detection.expectedColumns.length === 0
+      ) {
+        throw new Error(
+          `Configuración inválida para "${sheetName}": la estrategia "auto" requiere ` +
+            `al menos una columna esperada. Configura "expectedColumns" en la ` +
+            `plantilla (tab "Hojas") o usa estrategia "fixed_row" si conoces ` +
+            `la fila exacta de la cabecera.`
+        );
+      }
       const headerRow = findHeaderRow(
         matrix,
         detection.expectedColumns,
@@ -64,7 +75,9 @@ export function readSheetToDataset(
       if (headerRow === null) {
         throw new Error(
           `No se pudo auto-detectar la fila de cabecera en la hoja "${sheetName}". ` +
-            `Columnas esperadas: ${detection.expectedColumns.join(", ")}`
+            `Columnas esperadas: ${detection.expectedColumns.join(", ")}. ` +
+            `Verifica que el nombre de las columnas coincida (mayúsculas/minúsculas ` +
+            `y tildes son ignorados, pero el texto debe ser igual).`
         );
       }
       return buildDatasetFromHeaders(matrix, headerRow, ws.name, detection);

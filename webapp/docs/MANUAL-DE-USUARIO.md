@@ -213,6 +213,12 @@ Configura el archivo ZIP generado:
 - **Plantilla de nombre por agencia**: ej: `Reporte {AGENCIA} Corte 1 {PERIODO_COMI}.xlsx`
 - **Hojas del archivo por agencia**: qué datasets incluir en cada Excel de agencia. La opción "Filtrar a agencia" (activa por defecto) incluye solo los datos de esa agencia; desactivarla pondría todos los datos.
 - **Formatos de columnas**: aplica formato numérico a columnas específicas (`integer`, `currency`, `percent`, `number`).
+- **Resaltado de cabeceras**: pinta celdas de cabecera con un color específico cuando el nombre de la columna contiene determinados términos.
+  - **Defaults globales** (siempre activos): columnas que contengan **"Penalidad"** se pintan de azul claro `#0070C0`, y las que contengan **"Clawback"** de azul oscuro `#002060`. Ambas con letra blanca. No requieren configuración.
+  - **Reglas custom**: para añadir más términos (ej: "Multa", "Bono") o sobrescribir los defaults con otros colores, agrega reglas con el botón "+ Regla". Cada una define:
+    - **Términos** (separados por coma): el match es **case-insensitive**, **sin tildes** y por **substring** (la columna `PENALIZACIÓN MENSUAL` matchea con el término `penalizacion`).
+    - **Color de relleno** y **color de fuente** en hex `#RRGGBB`.
+  - **Prioridad**: las reglas custom se evalúan antes que los defaults; la primera que matchea gana. Si ninguna matchea, la cabecera usa el naranja institucional `#FF6B00`.
 
 #### 7. JSON (avanzado)
 Edita el pipeline directamente en formato JSON. Útil para configuraciones que el wizard no cubre. El sistema valida el JSON antes de aplicar.

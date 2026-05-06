@@ -5,6 +5,7 @@ import { Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { CommaSeparatedInput } from "./comma-input";
 import type {
   DeriveColumnStep,
   DeriveOp,
@@ -415,32 +416,18 @@ function DeriveColumnCard({
 
       <div className="space-y-2">
         <Label className="text-xs">Columnas fuente (separadas por coma)</Label>
-        <Input
-          value={(step.sourceColumns ?? []).join(", ")}
-          onChange={(e) =>
-            onUpdate({
-              sourceColumns: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
+        <CommaSeparatedInput
+          value={step.sourceColumns ?? []}
+          onChange={(cols) => onUpdate({ sourceColumns: cols })}
           placeholder="AGENCIA"
         />
 
         {step.op === "strip_suffix" && (
           <div className="space-y-1">
             <Label className="text-xs">Sufijos a eliminar (separados por coma)</Label>
-            <Input
-              value={(step.suffixes ?? []).join(", ")}
-              onChange={(e) =>
-                onUpdate({
-                  suffixes: e.target.value
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                })
-              }
+            <CommaSeparatedInput
+              value={step.suffixes ?? []}
+              onChange={(suffs) => onUpdate({ suffixes: suffs })}
               placeholder="PROVINCIA, NORTE, SUR"
             />
           </div>

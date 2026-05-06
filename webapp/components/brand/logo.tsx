@@ -12,7 +12,7 @@ export function BrandLogo({ className, withText = true }: Props) {
       <div className="relative h-full aspect-square">
         <Image
           src="/logo.png"
-          alt="WIN Empresas"
+          alt="WIN Internet"
           fill
           sizes="48px"
           className="object-contain"
@@ -25,7 +25,7 @@ export function BrandLogo({ className, withText = true }: Props) {
             Segmentador
           </span>
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            WIN Empresas
+            WIN Internet
           </span>
         </div>
       ) : null}

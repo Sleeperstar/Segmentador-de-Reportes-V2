@@ -2,16 +2,27 @@ import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import type {
   Dataset,
+  HeaderHighlight,
   OutputFormat,
   OutputSheet,
   PipelineContext,
   Row,
   WriteOutputStep,
 } from "@/lib/pipeline/types";
-import { sanitizeFileName } from "@/lib/pipeline/utils/normalize";
+import { normalize, sanitizeFileName } from "@/lib/pipeline/utils/normalize";
 
 const BRAND_PRIMARY = "FFFF6B00";
 const BRAND_SECONDARY = "FFFFB800";
+const WHITE = "FFFFFFFF";
+
+/**
+ * Reglas de resaltado de cabecera por defecto. Aplican a TODAS las plantillas
+ * salvo que se sobrescriban con `headerHighlights` en `WriteOutputStep`.
+ */
+export const DEFAULT_HEADER_HIGHLIGHTS: HeaderHighlight[] = [
+  { terms: ["penalidad"], fillColor: "#0070C0", fontColor: "#FFFFFF" },
+  { terms: ["clawback"], fillColor: "#002060", fontColor: "#FFFFFF" },
+];
 
 export type WriteOutputResult = {
   zipBuffer: Buffer;
@@ -79,7 +90,12 @@ export async function executeWriteOutput(
         continue;
       }
       const ws = wb.addWorksheet(sheetSpec.name.slice(0, 31));
-      writeDatasetToWorksheet(ws, ds, step.perAgency.formats);
+      writeDatasetToWorksheet(
+        ws,
+        ds,
+        step.perAgency.formats,
+        step.perAgency.headerHighlights
+      );
     }
 
     if (omittedSheets.length > 0) {
@@ -146,10 +162,11 @@ function resolveSheetDataset(
 function writeDatasetToWorksheet(
   ws: ExcelJS.Worksheet,
   ds: Dataset,
-  formats: OutputFormat[] = []
+  formats: OutputFormat[] = [],
+  highlights: HeaderHighlight[] = []
 ) {
   const headerRow = ws.addRow(ds.columns);
-  applyHeaderStyle(headerRow);
+  applyHeaderStyle(headerRow, ds.columns, highlights);
 
   for (const row of ds.rows) {
     const values = ds.columns.map((c) => normalizeForWrite(row[c]));
@@ -160,13 +177,22 @@ function writeDatasetToWorksheet(
   autoFitColumns(ws, ds);
 }
 
-function applyHeaderStyle(row: ExcelJS.Row) {
-  row.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+function applyHeaderStyle(
+  row: ExcelJS.Row,
+  columns: string[],
+  highlights: HeaderHighlight[]
+) {
+  // Las custom de la plantilla tienen prioridad sobre las globales.
+  const allRules: HeaderHighlight[] = [...highlights, ...DEFAULT_HEADER_HIGHLIGHTS];
+
+  row.eachCell((cell, colNum) => {
+    const colName = columns[colNum - 1] ?? "";
+    const style = resolveHeaderStyle(colName, allRules);
+    cell.font = { bold: true, color: { argb: style.fontArgb } };
     cell.fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: BRAND_PRIMARY },
+      fgColor: { argb: style.fillArgb },
     };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.border = {
@@ -177,6 +203,52 @@ function applyHeaderStyle(row: ExcelJS.Row) {
     };
   });
   row.height = 22;
+}
+
+/**
+ * Resuelve el estilo a aplicar a la celda de cabecera dado su nombre de columna
+ * y el conjunto combinado de reglas (custom primero, defaults después).
+ *
+ * Reglas:
+ * - Match case-insensitive y sin tildes (vía `normalize`).
+ * - Substring: el término debe aparecer dentro del nombre normalizado.
+ * - Primera regla con un término que matchea gana.
+ * - Sin match → naranja institucional + letra blanca.
+ */
+export function resolveHeaderStyle(
+  columnName: string,
+  rules: HeaderHighlight[]
+): { fillArgb: string; fontArgb: string } {
+  const haystack = normalize(columnName);
+  for (const rule of rules) {
+    for (const term of rule.terms) {
+      const needle = normalize(term);
+      if (needle && haystack.includes(needle)) {
+        return {
+          fillArgb: hexToArgb(rule.fillColor),
+          fontArgb: hexToArgb(rule.fontColor),
+        };
+      }
+    }
+  }
+  return { fillArgb: BRAND_PRIMARY, fontArgb: WHITE };
+}
+
+/**
+ * Convierte un color hex `#RRGGBB` o `#RGB` al formato ARGB que usa ExcelJS
+ * (`FFRRGGBB`). Si la entrada no es un hex válido, retorna `FFFFFFFF` (blanco).
+ */
+export function hexToArgb(hex: string): string {
+  if (typeof hex !== "string") return "FFFFFFFF";
+  let h = hex.trim().replace(/^#/, "").toUpperCase();
+  if (h.length === 3) {
+    h = h
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  }
+  if (!/^[0-9A-F]{6}$/.test(h)) return "FFFFFFFF";
+  return `FF${h}`;
 }
 
 function applyColumnFormats(

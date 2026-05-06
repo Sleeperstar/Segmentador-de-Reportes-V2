@@ -201,6 +201,8 @@ export type WriteOutputStep = {
     sheets: OutputSheet[];
     fileNameTemplate: string;
     formats?: OutputFormat[];
+    /** Reglas de resaltado visual de cabeceras según términos contenidos. */
+    headerHighlights?: HeaderHighlight[];
   };
   zipFileNameTemplate: string;
 };
@@ -215,8 +217,20 @@ export type OutputSheet = {
 export type OutputFormat = {
   columns: string[];
   format: "percent" | "number" | "currency" | "integer";
-  /** Estilo de cabecera (opcional). */
-  headerStyle?: "default" | "penalty" | "clawback";
+};
+
+/**
+ * Regla de resaltado de cabecera. Cuando el nombre de una columna contiene
+ * cualquiera de los `terms` (case-insensitive, sin tildes, substring), la
+ * celda de cabecera se pinta con `fillColor` y la fuente con `fontColor`.
+ * Las reglas se evalúan en orden; la primera que matchea gana.
+ */
+export type HeaderHighlight = {
+  terms: string[];
+  /** Color de relleno en hex `#RRGGBB`. */
+  fillColor: string;
+  /** Color de fuente en hex `#RRGGBB`. */
+  fontColor: string;
 };
 
 export type PipelineStep =

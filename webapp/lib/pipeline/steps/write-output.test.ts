@@ -1,8 +1,17 @@
 import { describe, it, expect } from "vitest";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
-import { executeWriteOutput, renderTemplate } from "./write-output";
-import type { PipelineContext, Group } from "@/lib/pipeline/types";
+import {
+  executeWriteOutput,
+  hexToArgb,
+  renderTemplate,
+  resolveHeaderStyle,
+} from "./write-output";
+import type {
+  HeaderHighlight,
+  PipelineContext,
+  Group,
+} from "@/lib/pipeline/types";
 
 describe("renderTemplate", () => {
   it("reemplaza placeholders simples", () => {
@@ -170,5 +179,122 @@ describe("write_output", () => {
         { ...ctx, variables: new Map() }
       )
     ).rejects.toThrow(/Variables sin resolver.*PERIODO_COMI|MES_FALTANTE/);
+  });
+});
+
+describe("hexToArgb", () => {
+  it("convierte hex de 6 dígitos a ARGB", () => {
+    expect(hexToArgb("#0070C0")).toBe("FF0070C0");
+    expect(hexToArgb("0070c0")).toBe("FF0070C0");
+  });
+  it("expande hex de 3 dígitos", () => {
+    expect(hexToArgb("#fff")).toBe("FFFFFFFF");
+    expect(hexToArgb("#abc")).toBe("FFAABBCC");
+  });
+  it("retorna FFFFFFFF para entradas inválidas", () => {
+    expect(hexToArgb("not-a-color")).toBe("FFFFFFFF");
+    expect(hexToArgb("")).toBe("FFFFFFFF");
+  });
+});
+
+describe("resolveHeaderStyle", () => {
+  it("aplica el default de Penalidad cuando la columna lo contiene", () => {
+    const style = resolveHeaderStyle("Penalidad Mensual", [
+      { terms: ["penalidad"], fillColor: "#0070C0", fontColor: "#FFFFFF" },
+    ]);
+    expect(style).toEqual({ fillArgb: "FF0070C0", fontArgb: "FFFFFFFF" });
+  });
+
+  it("aplica el default de Clawback cuando la columna lo contiene", () => {
+    const style = resolveHeaderStyle("Total Clawback", [
+      { terms: ["clawback"], fillColor: "#002060", fontColor: "#FFFFFF" },
+    ]);
+    expect(style).toEqual({ fillArgb: "FF002060", fontArgb: "FFFFFFFF" });
+  });
+
+  it("regla custom tiene prioridad sobre default global (custom va primero)", () => {
+    const customRules: HeaderHighlight[] = [
+      // Custom: clawback debe ser rojo
+      { terms: ["clawback"], fillColor: "#FF0000", fontColor: "#000000" },
+      // Default que sería sobrescrito si no estuviera primero el custom
+      { terms: ["clawback"], fillColor: "#002060", fontColor: "#FFFFFF" },
+    ];
+    const style = resolveHeaderStyle("Total Clawback Anual", customRules);
+    expect(style).toEqual({ fillArgb: "FFFF0000", fontArgb: "FF000000" });
+  });
+
+  it("match es case-insensitive y sin tildes", () => {
+    const rules: HeaderHighlight[] = [
+      { terms: ["penalizacion"], fillColor: "#0070C0", fontColor: "#FFFFFF" },
+    ];
+    expect(resolveHeaderStyle("PENALIZACIÓN", rules)).toEqual({
+      fillArgb: "FF0070C0",
+      fontArgb: "FFFFFFFF",
+    });
+    expect(resolveHeaderStyle("penalización", rules)).toEqual({
+      fillArgb: "FF0070C0",
+      fontArgb: "FFFFFFFF",
+    });
+  });
+
+  it("usa el naranja institucional cuando ninguna regla matchea", () => {
+    const style = resolveHeaderStyle("Agencia", []);
+    expect(style).toEqual({ fillArgb: "FFFF6B00", fontArgb: "FFFFFFFF" });
+  });
+});
+
+describe("write_output con headerHighlights aplicados al XLSX", () => {
+  function singleGroupCtx(): PipelineContext {
+    const g: Group = {
+      key: "X",
+      displayName: "X",
+      datasets: new Map([
+        [
+          "rep",
+          {
+            columns: ["AGENCIA", "ALTAS", "Penalidad", "Clawback Total"],
+            rows: [{ AGENCIA: "X", ALTAS: 1, Penalidad: 0, "Clawback Total": 0 }],
+          },
+        ],
+      ]),
+    };
+    return {
+      inputFileName: "in.xlsx",
+      variables: new Map(),
+      datasets: new Map(),
+      groups: new Map([["X", g]]),
+      logs: [],
+    };
+  }
+
+  it("aplica los defaults globales de Penalidad y Clawback en el archivo generado", async () => {
+    const ctx = singleGroupCtx();
+    const result = await executeWriteOutput(
+      {
+        id: "w",
+        type: "write_output",
+        perAgency: {
+          sheets: [{ name: "Hoja", from: "rep" }],
+          fileNameTemplate: "R_{AGENCIA}.xlsx",
+        },
+        zipFileNameTemplate: "all.zip",
+      },
+      ctx
+    );
+
+    const zip = await JSZip.loadAsync(result.zipBuffer);
+    const buf = await zip.file("R_X.xlsx")!.async("uint8array");
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf.buffer as ArrayBuffer);
+    const ws = wb.getWorksheet("Hoja")!;
+
+    const cellPenalidad = ws.getCell("C1");
+    const cellClawback = ws.getCell("D1");
+    const cellAgencia = ws.getCell("A1");
+
+    expect((cellPenalidad.fill as ExcelJS.FillPattern).fgColor?.argb).toBe("FF0070C0");
+    expect((cellClawback.fill as ExcelJS.FillPattern).fgColor?.argb).toBe("FF002060");
+    // Sin match → naranja institucional
+    expect((cellAgencia.fill as ExcelJS.FillPattern).fgColor?.argb).toBe("FFFF6B00");
   });
 });

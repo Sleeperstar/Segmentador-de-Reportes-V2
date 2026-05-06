@@ -5,6 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { CommaSeparatedInput } from "./comma-input";
 import type {
   HeaderDetection,
   HeaderStrategy,
@@ -94,13 +95,23 @@ export function LoadSheetsTab({
                     value={step.headerDetection.strategy}
                     onChange={(e) => {
                       const strategy = e.target.value as HeaderStrategy;
+                      const prev = step.headerDetection;
+                      // Preservar valores previos para no perder lo que el
+                      // usuario ya tipeó si solo está explorando opciones.
+                      const prevCols =
+                        prev.strategy === "auto" ? prev.expectedColumns : [];
+                      const prevRow =
+                        prev.strategy === "fixed_row" ? prev.row : 1;
+                      const prevRows =
+                        prev.strategy === "multi_level" ? prev.rows : [1, 2];
+
                       let next: HeaderDetection;
                       if (strategy === "auto") {
-                        next = { strategy: "auto", expectedColumns: [] };
+                        next = { strategy: "auto", expectedColumns: prevCols };
                       } else if (strategy === "fixed_row") {
-                        next = { strategy: "fixed_row", row: 1 };
+                        next = { strategy: "fixed_row", row: prevRow };
                       } else {
-                        next = { strategy: "multi_level", rows: [1, 2] };
+                        next = { strategy: "multi_level", rows: prevRows };
                       }
                       updateHeader(idx, next);
                     }}
@@ -119,19 +130,27 @@ export function LoadSheetsTab({
                     <Label className="text-xs">
                       Columnas esperadas (separadas por coma)
                     </Label>
-                    <Input
-                      value={step.headerDetection.expectedColumns.join(", ")}
-                      onChange={(e) =>
+                    <CommaSeparatedInput
+                      value={step.headerDetection.expectedColumns}
+                      onChange={(cols) =>
                         updateHeader(idx, {
                           strategy: "auto",
-                          expectedColumns: e.target.value
-                            .split(",")
-                            .map((s) => s.trim())
-                            .filter(Boolean),
+                          expectedColumns: cols,
                         })
                       }
                       placeholder="AGENCIA, ALTAS"
+                      className={
+                        step.headerDetection.expectedColumns.length === 0
+                          ? "border-amber-400 focus-visible:ring-amber-400"
+                          : ""
+                      }
                     />
+                    {step.headerDetection.expectedColumns.length === 0 && (
+                      <p className="text-xs text-amber-700 mt-1">
+                        Obligatorio. La estrategia &quot;auto&quot; necesita al
+                        menos una columna para detectar la fila de cabecera.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -156,8 +175,9 @@ export function LoadSheetsTab({
                   <div className="space-y-1 md:col-span-2">
                     <Label className="text-xs">Filas (separadas por coma)</Label>
                     <Input
-                      value={step.headerDetection.rows.join(", ")}
-                      onChange={(e) =>
+                      defaultValue={step.headerDetection.rows.join(", ")}
+                      key={step.headerDetection.rows.join(",")}
+                      onBlur={(e) =>
                         updateHeader(idx, {
                           strategy: "multi_level",
                           rows: e.target.value

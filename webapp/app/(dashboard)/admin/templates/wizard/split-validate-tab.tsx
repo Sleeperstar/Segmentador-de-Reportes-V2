@@ -5,6 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { CommaSeparatedInput } from "./comma-input";
 import type {
   AggregateSpec,
   Alias,
@@ -111,16 +112,9 @@ export function SplitValidateTab({
               <Label className="text-xs">
                 Datasets de reporte a segmentar (separados por coma)
               </Label>
-              <Input
-                value={(split?.reportSources ?? []).join(", ")}
-                onChange={(e) =>
-                  setSplit({
-                    reportSources: e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
+              <CommaSeparatedInput
+                value={split?.reportSources ?? []}
+                onChange={(srcs) => setSplit({ reportSources: srcs })}
                 placeholder="horizontal, vertical, marcha_blanca"
               />
               <p className="text-xs text-muted-foreground">
@@ -213,20 +207,12 @@ export function SplitValidateTab({
                   }
                   placeholder="Nombre canónico"
                 />
-                <Input
-                  value={a.variants.join(", ")}
-                  onChange={(e) =>
+                <CommaSeparatedInput
+                  value={a.variants}
+                  onChange={(vars) =>
                     setAliases(
                       aliases.map((x, i) =>
-                        i === idx
-                          ? {
-                              ...x,
-                              variants: e.target.value
-                                .split(",")
-                                .map((s) => s.trim())
-                                .filter(Boolean),
-                            }
-                          : x
+                        i === idx ? { ...x, variants: vars } : x
                       )
                     )
                   }
@@ -372,15 +358,11 @@ function SideEditor({
         </div>
         <div className="space-y-1">
           <Label className="text-xs">Datasets (coma)</Label>
-          <Input
-            value={fromArr.join(", ")}
-            onChange={(e) => {
-              const arr = e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
-              onChange({ ...spec, from: arr.length === 1 ? arr[0] : arr });
-            }}
+          <CommaSeparatedInput
+            value={fromArr}
+            onChange={(arr) =>
+              onChange({ ...spec, from: arr.length === 1 ? arr[0] : arr })
+            }
             placeholder={availableSources.join(", ")}
           />
         </div>

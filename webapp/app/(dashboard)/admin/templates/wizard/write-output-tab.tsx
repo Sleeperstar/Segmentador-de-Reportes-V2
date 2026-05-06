@@ -1,11 +1,13 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Info, Plus, Trash2 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { CommaSeparatedInput } from "./comma-input";
 import type {
+  HeaderHighlight,
   OutputFormat,
   OutputSheet,
   WriteOutputStep,
@@ -45,6 +47,7 @@ export function WriteOutputTab({
 
   const sheets = step?.perAgency.sheets ?? [];
   const formats = step?.perAgency.formats ?? [];
+  const highlights = step?.perAgency.headerHighlights ?? [];
 
   return (
     <div className="space-y-6">
@@ -198,16 +201,9 @@ export function WriteOutputTab({
                   <Label className="text-xs">
                     Columnas (separadas por coma)
                   </Label>
-                  <Input
-                    value={f.columns.join(", ")}
-                    onChange={(e) =>
-                      updateFormat(idx, {
-                        columns: e.target.value
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter(Boolean),
-                      })
-                    }
+                  <CommaSeparatedInput
+                    value={f.columns}
+                    onChange={(cols) => updateFormat(idx, { columns: cols })}
                     placeholder="ALTAS, MONTO"
                   />
                 </div>
@@ -246,6 +242,125 @@ export function WriteOutputTab({
           </div>
         )}
       </section>
+
+      {/* Resaltado de cabeceras */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label>Resaltado de cabeceras (opcional)</Label>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setPerAgency({
+                headerHighlights: [
+                  ...highlights,
+                  { terms: [], fillColor: "#0070C0", fontColor: "#FFFFFF" },
+                ],
+              })
+            }
+          >
+            <Plus className="h-4 w-4" />
+            Regla
+          </Button>
+        </div>
+
+        <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 flex items-start gap-2">
+          <Info className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p>
+              Por defecto, las columnas cuyo nombre contenga{" "}
+              <strong>&quot;Penalidad&quot;</strong> se pintan de azul claro
+              (#0070C0) y las que contengan <strong>&quot;Clawback&quot;</strong>
+              {" "}de azul oscuro (#002060), ambas con letra blanca.
+            </p>
+            <p>
+              Aquí puedes agregar reglas adicionales o sobrescribir los defaults.
+              Las reglas que agregues tienen prioridad sobre las globales. El
+              match es <em>case-insensitive</em> y por substring.
+            </p>
+          </div>
+        </div>
+
+        {highlights.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic">
+            Sin reglas adicionales. Solo se aplican los defaults globales.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {highlights.map((h, idx) => (
+              <div
+                key={idx}
+                className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_auto] gap-2 p-3 rounded border bg-muted/30"
+              >
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    Términos (separados por coma)
+                  </Label>
+                  <CommaSeparatedInput
+                    value={h.terms}
+                    onChange={(terms) => updateHighlight(idx, { terms })}
+                    placeholder="Penalidad, Multa"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Color de relleno</Label>
+                  <div className="flex gap-1">
+                    <input
+                      type="color"
+                      value={normalizeHexInput(h.fillColor)}
+                      onChange={(e) =>
+                        updateHighlight(idx, { fillColor: e.target.value.toUpperCase() })
+                      }
+                      className="h-10 w-10 rounded border border-input cursor-pointer"
+                    />
+                    <Input
+                      value={h.fillColor}
+                      onChange={(e) =>
+                        updateHighlight(idx, { fillColor: e.target.value })
+                      }
+                      placeholder="#0070C0"
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Color de fuente</Label>
+                  <div className="flex gap-1">
+                    <input
+                      type="color"
+                      value={normalizeHexInput(h.fontColor)}
+                      onChange={(e) =>
+                        updateHighlight(idx, { fontColor: e.target.value.toUpperCase() })
+                      }
+                      className="h-10 w-10 rounded border border-input cursor-pointer"
+                    />
+                    <Input
+                      value={h.fontColor}
+                      onChange={(e) =>
+                        updateHighlight(idx, { fontColor: e.target.value })
+                      }
+                      placeholder="#FFFFFF"
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setPerAgency({
+                      headerHighlights: highlights.filter((_, i) => i !== idx),
+                    })
+                  }
+                  className="self-end"
+                >
+                  <Trash2 className="h-4 w-4 text-red-600" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 
@@ -260,4 +375,28 @@ export function WriteOutputTab({
       formats: formats.map((f, i) => (i === idx ? { ...f, ...patch } : f)),
     });
   }
+
+  function updateHighlight(idx: number, patch: Partial<HeaderHighlight>) {
+    setPerAgency({
+      headerHighlights: highlights.map((h, i) =>
+        i === idx ? { ...h, ...patch } : h
+      ),
+    });
+  }
+}
+
+/**
+ * El input nativo `<input type="color">` requiere un valor `#RRGGBB` válido.
+ * Si el usuario está editando el campo de texto y aún no es válido, devolvemos
+ * un fallback para no romper el color picker.
+ */
+function normalizeHexInput(hex: string): string {
+  if (typeof hex !== "string") return "#000000";
+  const trimmed = hex.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) return trimmed;
+  if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+    const c = trimmed.slice(1);
+    return "#" + c.split("").map((x) => x + x).join("");
+  }
+  return "#000000";
 }
