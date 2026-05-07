@@ -175,6 +175,46 @@ function validateStepShape(step: PipelineStep, path: string, issues: ValidationI
       if (!step.agencyColumn?.report) {
         issues.push({ path: `${path}.agencyColumn.report`, message: "Columna requerida." });
       }
+      if (step.unifyByLookup !== undefined) {
+        const u = step.unifyByLookup as {
+          report?: { rucColumn?: unknown };
+          base?: { rucColumn?: unknown; canonicalNameColumn?: unknown };
+        };
+        if (typeof u !== "object" || u === null) {
+          issues.push({
+            path: `${path}.unifyByLookup`,
+            message: "Debe ser un objeto con `report` y `base`.",
+          });
+        } else {
+          if (typeof u.report?.rucColumn !== "string" || u.report.rucColumn.trim() === "") {
+            issues.push({
+              path: `${path}.unifyByLookup.report.rucColumn`,
+              message: "Columna RUC del reporte requerida (string no vacío).",
+            });
+          }
+          if (typeof u.base?.rucColumn !== "string" || u.base.rucColumn.trim() === "") {
+            issues.push({
+              path: `${path}.unifyByLookup.base.rucColumn`,
+              message: "Columna RUC en base requerida (string no vacío).",
+            });
+          }
+          if (
+            typeof u.base?.canonicalNameColumn !== "string" ||
+            u.base.canonicalNameColumn.trim() === ""
+          ) {
+            issues.push({
+              path: `${path}.unifyByLookup.base.canonicalNameColumn`,
+              message: "Columna de nombre canónico en base requerida (string no vacío).",
+            });
+          }
+          if (!step.baseSource) {
+            issues.push({
+              path: `${path}.baseSource`,
+              message: "Cuando se usa `unifyByLookup`, `baseSource` es obligatorio.",
+            });
+          }
+        }
+      }
       break;
     case "join":
       if (!step.left || !step.right) {

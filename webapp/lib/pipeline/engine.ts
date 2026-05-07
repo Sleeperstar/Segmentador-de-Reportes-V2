@@ -5,6 +5,7 @@ import type {
   PipelineContext,
   PipelineOutput,
   PipelineResult,
+  SplitByColumnStep,
   ValidationResult,
 } from "@/lib/pipeline/types";
 import { executeLoadSheet } from "./steps/load-sheet";
@@ -14,6 +15,7 @@ import { executeSplitByColumn } from "./steps/split-by-column";
 import { executeJoin } from "./steps/join";
 import { executeValidate } from "./steps/validate";
 import { executeWriteOutput } from "./steps/write-output";
+import { unifyGroupsByRuc } from "./steps/unify-groups";
 import { parseFileName } from "./utils/filename-parser";
 
 export type RunPipelineInput = {
@@ -59,6 +61,7 @@ export async function runPipeline(
 
   const validations: ValidationResult[] = [];
   let output: PipelineOutput | undefined;
+  let unifyApplied = false;
 
   for (const step of pipeline.steps) {
     try {
@@ -82,6 +85,13 @@ export async function runPipeline(
           executeValidate(step, ctx, validations);
           break;
         case "write_output": {
+          if (!unifyApplied) {
+            const splitWithUnify = findSplitWithUnify(pipeline);
+            if (splitWithUnify) {
+              unifyGroupsByRuc(ctx, splitWithUnify);
+            }
+            unifyApplied = true;
+          }
           const r = await executeWriteOutput(step, ctx);
           const mismatches = validations.filter((v) => !v.matched).length;
           output = {
@@ -121,4 +131,19 @@ export async function runPipeline(
     output,
     logs: ctx.logs,
   };
+}
+
+/**
+ * Busca el primer `split_by_column` del pipeline que tenga `unifyByLookup`
+ * configurado. La unificación se aplica una sola vez antes del primer
+ * `write_output`, justo después de que `validate` haya operado sobre los grupos
+ * granulares (preserva la trazabilidad del descuadre por sub-agencia).
+ */
+function findSplitWithUnify(pipeline: Pipeline): SplitByColumnStep | null {
+  for (const step of pipeline.steps) {
+    if (step.type === "split_by_column" && step.unifyByLookup) {
+      return step;
+    }
+  }
+  return null;
 }

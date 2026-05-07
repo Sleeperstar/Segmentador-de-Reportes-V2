@@ -160,6 +160,19 @@ export type SplitByColumnStep = {
   };
   normalize?: NormalizeOptions;
   aliases?: Alias[];
+  /**
+   * Si está presente, después de `validate` y antes de `write_output` los grupos
+   * se fusionan por RUC común usando un lookup en el dataset base
+   * (RUC del reporte → RUC del base → nombre canónico). Útil cuando la columna
+   * de agencia del reporte trae valores compuestos (ej: nombre + departamento)
+   * y se quiere generar un único archivo por agencia real.
+   */
+  unifyByLookup?: UnifyByLookup;
+};
+
+export type UnifyByLookup = {
+  report: { rucColumn: string };
+  base: { rucColumn: string; canonicalNameColumn: string };
 };
 
 export type JoinStep = {

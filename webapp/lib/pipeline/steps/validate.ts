@@ -26,7 +26,7 @@ export function executeValidate(
           message:
             `Validación "${rule.name}"` +
             (res.groupKey ? ` (grupo ${res.groupKey})` : "") +
-            ` no coincide: ${res.left} vs ${res.right}.`,
+            ` no coincide: Hoja Reporte ${res.left} vs Hoja Base ${res.right}.`,
           timestamp: new Date(),
           context: { rule: rule.name, groupKey: res.groupKey, left: res.left, right: res.right },
         });
@@ -36,7 +36,7 @@ export function executeValidate(
           message:
             `Validación "${rule.name}"` +
             (res.groupKey ? ` (grupo ${res.groupKey})` : "") +
-            ` OK (${res.left}).`,
+            ` OK (Hoja Reporte = Hoja Base = ${res.left}).`,
           timestamp: new Date(),
           context: { rule: rule.name, groupKey: res.groupKey, value: res.left },
         });

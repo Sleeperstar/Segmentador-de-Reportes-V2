@@ -4,6 +4,42 @@ Este documento registra los cambios más importantes realizados en el proyecto d
 
 ---
 
+## [v0.6] — 2026-05-06
+
+### Nueva funcionalidad: Unificar agencias por RUC
+
+- **Problema**: en plantillas como "Provincias Norte Corte 1", la columna `AGENCIA` de la hoja `Reporte CORTE 1` traía valores compuestos (ej: `ALIV TELECOM S.A.C. Áncash`, `ALIV TELECOM S.A.C. La Libertad`, etc.). Esto generaba 4 archivos en el ZIP cuando el negocio espera un único archivo por agencia real.
+- **Solución**: nuevo campo opcional `unifyByLookup` en `split_by_column` que, después de `validate` y antes de `write_output`, fusiona los grupos que comparten el mismo RUC bajo un único nombre canónico tomado de la base.
+  - Estructura:
+    ```json
+    "unifyByLookup": {
+      "report": { "rucColumn": "RUC" },
+      "base": { "rucColumn": "DNI_ASESOR", "canonicalNameColumn": "ASESOR" }
+    }
+    ```
+  - El motor construye en runtime el mapa `RUC → nombre canónico` desde la hoja base; los grupos cuyo RUC no aparece en el mapa se conservan tal cual y se emite un `warn`.
+  - La validación per_agency sigue operando sobre los grupos pre-fusión, así que los descuadres por sub-agencia (ej: Áncash vs La Libertad) siguen siendo visibles aunque el ZIP entregue un único archivo por agencia canónica.
+- **Wizard del admin (paso 5)**: nueva sección plegable "Unificar agencias por RUC (opcional)" con 3 inputs. Si los 3 campos están vacíos al guardar, el campo `unifyByLookup` se omite del JSON y la plantilla se comporta como antes.
+- **Validador**: si `unifyByLookup` está presente, se exige que los 3 campos sean strings no vacíos y que `baseSource` esté definido.
+- **Plantilla "Provincias Norte Corte 1"** actualizada:
+  - `agencyColumn.base` se mantiene como `"AGENCIA DEPARTAMENTO"` para que la validación per_agency siga cuadrando reporte y base por sub-agencia (departamento) ANTES de la unificación.
+  - Añadido `unifyByLookup` con `RUC` / `DNI_ASESOR` / `ASESOR`.
+  - Añadido `DNI_ASESOR` a `expectedColumns` del load_sheet de BASE.
+- **Cambios técnicos**:
+  - Nuevo tipo `UnifyByLookup` y campo `SplitByColumnStep.unifyByLookup` en `lib/pipeline/types.ts`.
+  - Nuevo módulo `lib/pipeline/steps/unify-groups.ts` con helper `unifyGroupsByRuc`.
+  - `engine.ts` invoca el helper una sola vez antes del primer `write_output` cuando hay un `split_by_column` con `unifyByLookup`.
+  - 7 tests adicionales en `lib/pipeline/steps/unify-groups.test.ts` (94 tests verdes en total).
+- **Migración**: ninguna para plantillas existentes sin `unifyByLookup`. Solo "Provincias Norte Corte 1" cambia su comportamiento (genera 1 archivo por agencia en lugar de uno por departamento).
+
+### Cambio cosmético: labels más descriptivos en validaciones
+
+- Wizard del admin (paso 5, reglas de validación): los `SideEditor` ahora se llaman **"Hoja Reporte"** y **"Hoja Base"** en lugar de "Lado izquierdo" y "Lado derecho".
+- Pantalla de resultado de ejecución: las columnas de la tabla de descuadres ahora se llaman **"Hoja Reporte"** y **"Hoja Base"** en lugar de "Izq" y "Der".
+- Logs del backend: los mensajes de validación ahora dicen `Hoja Reporte X vs Hoja Base Y` y `OK (Hoja Reporte = Hoja Base = X)` en lugar de `X vs Y` y `OK (X)`.
+
+---
+
 ## [v0.5] — 2026-05-05
 
 ### Nueva funcionalidad: Resaltado de cabeceras

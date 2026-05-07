@@ -202,9 +202,16 @@ Pasos opcionales que se aplican sobre los datasets:
   - **Datasets de reporte**: los datasets de las hojas de reporte (ej: `horizontal, vertical, marcha_blanca`).
   - **Dataset base**: el dataset BASE que también se segmenta por agencia (columna puede ser distinta, ej: `ASESOR`).
   - **Alias**: si una agencia tiene nombres distintos en reportes vs. base, agrégala aquí. Ejemplo: `EXPORTEL S.A.C.` y `EXPORTEL PROVINCIA` se agrupan como `EXPORTEL S.A.C.`
+  - **Unificar agencias por RUC (opcional)**: úsalo cuando la columna de agencia del reporte trae valores compuestos que deben ir en un único archivo por agencia real. Ejemplo: en "Provincias Norte Corte 1" la columna `AGENCIA` del reporte trae `ALIV TELECOM S.A.C. Áncash`, `ALIV TELECOM S.A.C. La Libertad`, `ALIV TELECOM S.A.C. Lambayeque` y `ALIV TELECOM S.A.C. Piura`, pero todas comparten el mismo RUC y el negocio quiere un solo `Reporte ALIV TELECOM S.A.C. Corte 1 202603.xlsx`.
+    - **Columna RUC en reportes**: nombre de la columna en las hojas de reporte que contiene el RUC (ej: `RUC`).
+    - **Columna RUC en base**: nombre de la columna en la hoja BASE que contiene el RUC (ej: `DNI_ASESOR`).
+    - **Columna nombre canónico en base**: nombre de la columna en BASE que contiene el nombre limpio de la agencia, sin departamento (ej: `ASESOR`).
+    - Si los 3 campos están vacíos, la plantilla **no unifica** (comportamiento estándar).
+    - La validación sigue mostrando una fila por sub-agencia para que sigas detectando descuadres por departamento, aunque el ZIP entregue un único archivo por agencia canónica.
 - **Validaciones**: reglas que verifican que los totales cuadren entre datasets.
   - `per_agency`: compara el total por agencia (recomendado).
   - `global`: compara el total global (usar con cuidado).
+  - Cada regla tiene dos lados: **Hoja Reporte** (típicamente `sum(ALTAS)` de una hoja de reporte) y **Hoja Base** (típicamente `count(COD_PEDIDO)` de la hoja BASE).
   - `onMismatch: warn` muestra advertencia sin detener; `error` detiene el proceso.
 
 #### 6. Salida

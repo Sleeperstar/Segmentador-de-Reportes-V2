@@ -53,6 +53,35 @@ export function SplitValidateTab({
     setSplit({ aliases: next });
   }
 
+  /* ---------- Unify by lookup ---------- */
+
+  const unify = split?.unifyByLookup;
+
+  function setUnifyField(
+    side: "report" | "base",
+    field: "rucColumn" | "canonicalNameColumn",
+    value: string
+  ) {
+    const cur: NonNullable<SplitByColumnStep["unifyByLookup"]> = unify ?? {
+      report: { rucColumn: "" },
+      base: { rucColumn: "", canonicalNameColumn: "" },
+    };
+    const nextReport = { ...cur.report };
+    const nextBase = { ...cur.base };
+    if (side === "report" && field === "rucColumn") nextReport.rucColumn = value;
+    if (side === "base" && field === "rucColumn") nextBase.rucColumn = value;
+    if (side === "base" && field === "canonicalNameColumn") nextBase.canonicalNameColumn = value;
+
+    const allEmpty =
+      nextReport.rucColumn.trim() === "" &&
+      nextBase.rucColumn.trim() === "" &&
+      nextBase.canonicalNameColumn.trim() === "";
+
+    setSplit({
+      unifyByLookup: allEmpty ? undefined : { report: nextReport, base: nextBase },
+    });
+  }
+
   /* ---------- Validations ---------- */
 
   function ensureValidate(): ValidateStep {
@@ -228,6 +257,63 @@ export function SplitValidateTab({
               </div>
             ))}
           </div>
+
+          <details className="rounded-md border bg-background p-3 group">
+            <summary className="cursor-pointer text-sm font-medium select-none">
+              Unificar agencias por RUC (opcional)
+            </summary>
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Si está configurado, los grupos del split que comparten el mismo
+                RUC se fusionarán en un solo archivo usando el nombre canónico
+                que viene en la base. Útil cuando la columna AGENCIA del reporte
+                trae valores compuestos (ej: nombre + departamento) y quieres
+                generar un único Excel por agencia real.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                La validación sigue operando sobre los grupos pre-fusión, así
+                que verás el detalle por sub-agencia aunque el ZIP entregue un
+                solo archivo por agencia canónica.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Columna RUC en reportes</Label>
+                  <Input
+                    value={unify?.report.rucColumn ?? ""}
+                    onChange={(e) =>
+                      setUnifyField("report", "rucColumn", e.target.value)
+                    }
+                    placeholder="RUC"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Columna RUC en base</Label>
+                  <Input
+                    value={unify?.base.rucColumn ?? ""}
+                    onChange={(e) =>
+                      setUnifyField("base", "rucColumn", e.target.value)
+                    }
+                    placeholder="DNI_ASESOR"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    Columna nombre canónico en base
+                  </Label>
+                  <Input
+                    value={unify?.base.canonicalNameColumn ?? ""}
+                    onChange={(e) =>
+                      setUnifyField("base", "canonicalNameColumn", e.target.value)
+                    }
+                    placeholder="ASESOR"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Para desactivar la unificación, deja los tres campos vacíos.
+              </p>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -286,13 +372,13 @@ export function SplitValidateTab({
                 </div>
 
                 <SideEditor
-                  label="Lado izquierdo"
+                  label="Hoja Reporte"
                   spec={r.left}
                   availableSources={availableSources}
                   onChange={(left) => updateRule(idx, { left })}
                 />
                 <SideEditor
-                  label="Lado derecho"
+                  label="Hoja Base"
                   spec={r.right}
                   availableSources={availableSources}
                   onChange={(right) => updateRule(idx, { right })}
