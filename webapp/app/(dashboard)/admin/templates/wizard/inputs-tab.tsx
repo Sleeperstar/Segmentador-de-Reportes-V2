@@ -5,13 +5,19 @@ import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { RegexPreview } from "./components/regex-preview";
+import {
+  DERIVED_VAR_FROM_LABELS,
+  FILENAME_TRANSFORM_LABELS,
+  derivedVarFromLabel,
+  entries,
+  filenameTransformLabel,
+} from "@/lib/wizard/labels";
 import type {
   DerivedVariable,
   PipelineInputs,
   FileNameTransform,
 } from "@/lib/pipeline/types";
-
-const TRANSFORMS: FileNameTransform[] = ["monthYearToYYYYMM", "upper", "lower", "trim"];
 
 export function InputsTab({
   inputs,
@@ -44,13 +50,14 @@ export function InputsTab({
   return (
     <div className="space-y-6">
       <div className="space-y-2 max-w-3xl">
-        <Label htmlFor="filename-pattern">Expresión regular del nombre de archivo</Label>
-        <Input
+        <Label htmlFor="filename-pattern">
+          Expresión regular del nombre de archivo
+        </Label>
+        <RegexPreview
           id="filename-pattern"
           value={inputs.fileNamePattern ?? ""}
-          onChange={(e) => onChange({ ...inputs, fileNamePattern: e.target.value })}
+          onChange={(v) => onChange({ ...inputs, fileNamePattern: v })}
           placeholder="Reportes AGENCIA LIMA Corte (?<corte>\\d+) (?<mes>\\w+) (?<anio>\\d{4})"
-          className="font-mono text-xs"
         />
         <p className="text-xs text-muted-foreground">
           Usa grupos nombrados <code>(?&lt;nombre&gt;...)</code> para capturar
@@ -81,7 +88,7 @@ export function InputsTab({
                 className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-2 p-3 rounded-lg border bg-muted/30"
               >
                 <div className="space-y-1">
-                  <Label className="text-xs">Nombre</Label>
+                  <Label className="text-xs">Nombre de la variable</Label>
                   <Input
                     value={v.name}
                     onChange={(e) => updateVariable(idx, { name: e.target.value })}
@@ -89,7 +96,7 @@ export function InputsTab({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Fuente</Label>
+                  <Label className="text-xs">Origen</Label>
                   <select
                     value={v.from}
                     onChange={(e) =>
@@ -98,14 +105,23 @@ export function InputsTab({
                       })
                     }
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    title={DERIVED_VAR_FROM_LABELS[v.from]?.hint}
                   >
-                    <option value="fileName">fileName</option>
-                    <option value="regexGroup">regexGroup</option>
+                    {entries(DERIVED_VAR_FROM_LABELS).map(([val, label]) => (
+                      <option key={val} value={val}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
+                  <p className="text-[10px] text-muted-foreground">
+                    {derivedVarFromLabel(v.from)}
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">
-                    {v.from === "regexGroup" ? "Grupo" : "Transformación"}
+                    {v.from === "regexGroup"
+                      ? "Nombre del grupo"
+                      : "Transformación a aplicar"}
                   </Label>
                   {v.from === "regexGroup" ? (
                     <Input
@@ -124,10 +140,15 @@ export function InputsTab({
                         })
                       }
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      title={
+                        FILENAME_TRANSFORM_LABELS[
+                          v.transform ?? "monthYearToYYYYMM"
+                        ]?.hint
+                      }
                     >
-                      {TRANSFORMS.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
+                      {entries(FILENAME_TRANSFORM_LABELS).map(([val]) => (
+                        <option key={val} value={val}>
+                          {filenameTransformLabel(val)}
                         </option>
                       ))}
                     </select>
@@ -138,7 +159,7 @@ export function InputsTab({
                     size="sm"
                     variant="ghost"
                     onClick={() => removeVariable(idx)}
-                    title="Eliminar"
+                    title="Eliminar variable"
                   >
                     <Trash2 className="h-4 w-4 text-red-600" />
                   </Button>

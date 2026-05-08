@@ -6,6 +6,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { CommaSeparatedInput } from "./comma-input";
+import { DatasetSelect } from "./components/dataset-select";
+import { DatasetMultiSelect } from "./components/dataset-multi-select";
+import {
+  AGGREGATE_LABELS,
+  ON_MISMATCH_LABELS,
+  SCOPE_LABELS,
+  aggregateLabel,
+  entries,
+  onMismatchLabel,
+  scopeLabel,
+} from "@/lib/wizard/labels";
+import type { DatasetOption } from "@/lib/wizard/describe-dataset";
 import type {
   AggregateSpec,
   Alias,
@@ -15,7 +27,6 @@ import type {
 } from "@/lib/pipeline/types";
 
 type Aggregate = AggregateSpec["aggregate"];
-const AGGREGATES: Aggregate[] = ["sum", "count", "count_distinct", "min", "max", "avg"];
 
 export function SplitValidateTab({
   split,
@@ -26,7 +37,7 @@ export function SplitValidateTab({
 }: {
   split: SplitByColumnStep | null;
   validate: ValidateStep | null;
-  availableSources: string[];
+  availableSources: DatasetOption[];
   onSplitChange: (s: SplitByColumnStep | null) => void;
   onValidateChange: (s: ValidateStep | null) => void;
 }) {
@@ -70,7 +81,8 @@ export function SplitValidateTab({
     const nextBase = { ...cur.base };
     if (side === "report" && field === "rucColumn") nextReport.rucColumn = value;
     if (side === "base" && field === "rucColumn") nextBase.rucColumn = value;
-    if (side === "base" && field === "canonicalNameColumn") nextBase.canonicalNameColumn = value;
+    if (side === "base" && field === "canonicalNameColumn")
+      nextBase.canonicalNameColumn = value;
 
     const allEmpty =
       nextReport.rucColumn.trim() === "" &&
@@ -78,7 +90,9 @@ export function SplitValidateTab({
       nextBase.canonicalNameColumn.trim() === "";
 
     setSplit({
-      unifyByLookup: allEmpty ? undefined : { report: nextReport, base: nextBase },
+      unifyByLookup: allEmpty
+        ? undefined
+        : { report: nextReport, base: nextBase },
     });
   }
 
@@ -128,50 +142,33 @@ export function SplitValidateTab({
           </p>
         </header>
 
-        <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">ID</Label>
-              <Input
-                value={split?.id ?? "segmenta"}
-                onChange={(e) => setSplit({ id: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <Label className="text-xs">
-                Datasets de reporte a segmentar (separados por coma)
-              </Label>
-              <CommaSeparatedInput
-                value={split?.reportSources ?? []}
-                onChange={(srcs) => setSplit({ reportSources: srcs })}
-                placeholder="horizontal, vertical, marcha_blanca"
-              />
-              <p className="text-xs text-muted-foreground">
-                Disponibles: {availableSources.join(", ") || "—"}
-              </p>
-            </div>
+        <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
+          <div className="space-y-1">
+            <Label className="text-xs">
+              Datasets de reporte a segmentar
+            </Label>
+            <DatasetMultiSelect
+              value={split?.reportSources ?? []}
+              onChange={(srcs) => setSplit({ reportSources: srcs })}
+              options={availableSources}
+              emptyMessage="Aún no hay datasets disponibles. Agrega hojas o filtros antes."
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Dataset base (opcional)</Label>
-              <select
+              <DatasetSelect
                 value={split?.baseSource ?? ""}
-                onChange={(e) =>
-                  setSplit({ baseSource: e.target.value || undefined })
-                }
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Sin base</option>
-                {availableSources.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setSplit({ baseSource: v || undefined })}
+                options={availableSources}
+                placeholder="Sin base"
+              />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Columna de agencia (en reportes)</Label>
+              <Label className="text-xs">
+                Columna de agencia en los reportes
+              </Label>
               <Input
                 value={split?.agencyColumn.report ?? ""}
                 onChange={(e) =>
@@ -186,7 +183,9 @@ export function SplitValidateTab({
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Columna de agencia (en base)</Label>
+              <Label className="text-xs">
+                Columna de agencia en la base (opcional)
+              </Label>
               <Input
                 value={split?.agencyColumn.base ?? ""}
                 onChange={(e) =>
@@ -197,14 +196,14 @@ export function SplitValidateTab({
                     },
                   })
                 }
-                placeholder="ASESOR (opcional)"
+                placeholder="ASESOR"
               />
             </div>
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs">Alias</Label>
+              <Label className="text-xs">Alias de agencias</Label>
               <Button
                 size="sm"
                 variant="ghost"
@@ -266,9 +265,9 @@ export function SplitValidateTab({
               <p className="text-xs text-muted-foreground">
                 Si está configurado, los grupos del split que comparten el mismo
                 RUC se fusionarán en un solo archivo usando el nombre canónico
-                que viene en la base. Útil cuando la columna AGENCIA del reporte
-                trae valores compuestos (ej: nombre + departamento) y quieres
-                generar un único Excel por agencia real.
+                que viene en la base. Útil cuando la columna AGENCIA del
+                reporte trae valores compuestos (ej: nombre + departamento) y
+                quieres generar un único Excel por agencia real.
               </p>
               <p className="text-xs text-muted-foreground">
                 La validación sigue operando sobre los grupos pre-fusión, así
@@ -298,12 +297,16 @@ export function SplitValidateTab({
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">
-                    Columna nombre canónico en base
+                    Columna nombre unificado en base
                   </Label>
                   <Input
                     value={unify?.base.canonicalNameColumn ?? ""}
                     onChange={(e) =>
-                      setUnifyField("base", "canonicalNameColumn", e.target.value)
+                      setUnifyField(
+                        "base",
+                        "canonicalNameColumn",
+                        e.target.value
+                      )
                     }
                     placeholder="ASESOR"
                   />
@@ -323,8 +326,9 @@ export function SplitValidateTab({
           <div>
             <h3 className="text-base font-semibold">Validaciones</h3>
             <p className="text-xs text-muted-foreground">
-              Reglas que comparan agregados entre datasets. Útil para verificar
-              que los totales cuadran (ej: sum ALTAS = count COD_PEDIDO).
+              Reglas que comparan totales entre datasets para verificar que
+              cuadran (ej: suma de ALTAS en el reporte = cantidad de
+              COD_PEDIDO en la base).
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={addRule}>
@@ -355,7 +359,7 @@ export function SplitValidateTab({
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Si no coincide</Label>
+                    <Label className="text-xs">Si los totales no cuadran</Label>
                     <select
                       value={r.onMismatch ?? "warn"}
                       onChange={(e) =>
@@ -365,8 +369,11 @@ export function SplitValidateTab({
                       }
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      <option value="warn">warn (advertencia)</option>
-                      <option value="error">error (detiene proceso)</option>
+                      {entries(ON_MISMATCH_LABELS).map(([val]) => (
+                        <option key={val} value={val}>
+                          {onMismatchLabel(val)}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -411,26 +418,31 @@ function SideEditor({
 }: {
   label: string;
   spec: AggregateSpec;
-  availableSources: string[];
+  availableSources: DatasetOption[];
   onChange: (spec: AggregateSpec) => void;
 }) {
-  const fromArr = Array.isArray(spec.from) ? spec.from : [spec.from];
+  const fromArr = Array.isArray(spec.from)
+    ? spec.from
+    : spec.from
+      ? [spec.from]
+      : [];
   return (
     <div className="rounded border bg-background p-3 space-y-2">
       <p className="text-xs font-medium">{label}</p>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
         <div className="space-y-1">
-          <Label className="text-xs">Agregado</Label>
+          <Label className="text-xs">Cómo agregar</Label>
           <select
             value={spec.aggregate}
             onChange={(e) =>
               onChange({ ...spec, aggregate: e.target.value as Aggregate })
             }
             className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            title={AGGREGATE_LABELS[spec.aggregate]?.hint}
           >
-            {AGGREGATES.map((a) => (
-              <option key={a} value={a}>
-                {a}
+            {entries(AGGREGATE_LABELS).map(([val]) => (
+              <option key={val} value={val}>
+                {aggregateLabel(val)}
               </option>
             ))}
           </select>
@@ -443,13 +455,14 @@ function SideEditor({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Datasets (coma)</Label>
-          <CommaSeparatedInput
+          <Label className="text-xs">Datasets a usar</Label>
+          <DatasetMultiSelect
             value={fromArr}
             onChange={(arr) =>
               onChange({ ...spec, from: arr.length === 1 ? arr[0] : arr })
             }
-            placeholder={availableSources.join(", ")}
+            options={availableSources}
+            emptyMessage="No hay datasets disponibles."
           />
         </div>
         <div className="space-y-1">
@@ -457,13 +470,23 @@ function SideEditor({
           <select
             value={spec.scope ?? "global"}
             onChange={(e) =>
-              onChange({ ...spec, scope: e.target.value as "global" | "per_agency" })
+              onChange({
+                ...spec,
+                scope: e.target.value as "global" | "per_agency",
+              })
             }
             className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            title={SCOPE_LABELS[spec.scope ?? "global"]?.hint}
           >
-            <option value="global">global</option>
-            <option value="per_agency">per_agency</option>
+            {entries(SCOPE_LABELS).map(([val]) => (
+              <option key={val} value={val}>
+                {scopeLabel(val)}
+              </option>
+            ))}
           </select>
+          <p className="text-[10px] text-muted-foreground">
+            {SCOPE_LABELS[spec.scope ?? "global"]?.hint}
+          </p>
         </div>
       </div>
     </div>

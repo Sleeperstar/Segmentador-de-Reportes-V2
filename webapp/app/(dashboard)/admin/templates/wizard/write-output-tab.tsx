@@ -1,11 +1,20 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { Info, Plus, Trash2 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { CommaSeparatedInput } from "./comma-input";
+import { DatasetSelect } from "./components/dataset-select";
+import { VariablesPanel } from "./components/variables-panel";
+import {
+  OUTPUT_FORMAT_LABELS,
+  entries,
+  outputFormatLabel,
+} from "@/lib/wizard/labels";
+import type { DatasetOption } from "@/lib/wizard/describe-dataset";
 import type {
   HeaderHighlight,
   OutputFormat,
@@ -13,15 +22,15 @@ import type {
   WriteOutputStep,
 } from "@/lib/pipeline/types";
 
-const FORMATS: OutputFormat["format"][] = ["percent", "number", "currency", "integer"];
-
 export function WriteOutputTab({
   step,
   availableSources,
+  availableVariables,
   onChange,
 }: {
   step: WriteOutputStep | null;
-  availableSources: string[];
+  availableSources: DatasetOption[];
+  availableVariables: string[];
   onChange: (step: WriteOutputStep | null) => void;
 }) {
   function ensure(): WriteOutputStep {
@@ -49,47 +58,93 @@ export function WriteOutputTab({
   const formats = step?.perAgency.formats ?? [];
   const highlights = step?.perAgency.headerHighlights ?? [];
 
+  /* Refs para insertar variables en el último input enfocado */
+  const zipRef = useRef<HTMLInputElement>(null);
+  const perAgencyRef = useRef<HTMLInputElement>(null);
+  const [lastFocused, setLastFocused] = useState<"zip" | "perAgency" | null>(
+    null
+  );
+
+  function insertToken(token: string) {
+    const target =
+      lastFocused === "zip"
+        ? zipRef.current
+        : lastFocused === "perAgency"
+          ? perAgencyRef.current
+          : null;
+    if (!target) return;
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? target.value.length;
+    const before = target.value.slice(0, start);
+    const after = target.value.slice(end);
+    const next = before + token + after;
+    if (lastFocused === "zip") {
+      set({ zipFileNameTemplate: next });
+    } else {
+      setPerAgency({ fileNameTemplate: next });
+    }
+    requestAnimationFrame(() => {
+      target.focus();
+      const pos = start + token.length;
+      target.setSelectionRange(pos, pos);
+    });
+  }
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">ID del paso</Label>
-          <Input
-            value={step?.id ?? "salida"}
-            onChange={(e) => set({ id: e.target.value })}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Plantilla del nombre del ZIP</Label>
-          <Input
-            value={step?.zipFileNameTemplate ?? ""}
-            onChange={(e) => set({ zipFileNameTemplate: e.target.value })}
-            placeholder="Reportes AGENCIA LIMA Corte 1 {PERIODO_COMI}.zip"
-          />
-        </div>
-      </div>
+      <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-4 items-start">
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Nombre del archivo ZIP</Label>
+            <Input
+              ref={zipRef}
+              value={step?.zipFileNameTemplate ?? ""}
+              onChange={(e) => set({ zipFileNameTemplate: e.target.value })}
+              onFocus={() => setLastFocused("zip")}
+              placeholder="Reportes AGENCIA LIMA Corte 1 {PERIODO_COMI}.zip"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Usa <code>{`{NOMBRE_VARIABLE}`}</code> para insertar variables del
+              contexto.
+            </p>
+          </div>
 
-      <div className="space-y-1">
-        <Label className="text-xs">Plantilla del nombre por agencia</Label>
-        <Input
-          value={step?.perAgency.fileNameTemplate ?? ""}
-          onChange={(e) => setPerAgency({ fileNameTemplate: e.target.value })}
-          placeholder="Reporte {AGENCIA} Corte 1 {PERIODO_COMI}.xlsx"
+          <div className="space-y-1">
+            <Label className="text-xs">
+              Nombre del archivo Excel por agencia
+            </Label>
+            <Input
+              ref={perAgencyRef}
+              value={step?.perAgency.fileNameTemplate ?? ""}
+              onChange={(e) =>
+                setPerAgency({ fileNameTemplate: e.target.value })
+              }
+              onFocus={() => setLastFocused("perAgency")}
+              placeholder="Reporte {AGENCIA} Corte 1 {PERIODO_COMI}.xlsx"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              <code>{`{AGENCIA}`}</code> se reemplaza con el nombre de cada
+              agencia segmentada.
+            </p>
+          </div>
+        </div>
+
+        <VariablesPanel
+          variables={availableVariables}
+          onInsert={insertToken}
+          title="Variables disponibles"
         />
-        <p className="text-xs text-muted-foreground">
-          Variables disponibles: <code>{`{AGENCIA}`}</code> y todas las variables
-          derivadas (ej: <code>{`{PERIODO_COMI}`}</code>).
-        </p>
       </div>
 
       {/* Hojas del archivo */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <Label>Hojas que se incluirán por agencia</Label>
+            <Label>Hojas del archivo Excel por agencia</Label>
             <p className="text-xs text-muted-foreground">
-              Si una agencia no tiene filas en una hoja segmentada, esa hoja se
-              omite automáticamente en su archivo.
+              Cada agencia recibe un Excel con estas hojas. Si una agencia no
+              tiene filas en una hoja segmentada, esa hoja se omite
+              automáticamente.
             </p>
           </div>
           <Button
@@ -99,7 +154,7 @@ export function WriteOutputTab({
               setPerAgency({
                 sheets: [
                   ...sheets,
-                  { name: "", from: availableSources[0] ?? "" },
+                  { name: "", from: availableSources[0]?.id ?? "" },
                 ],
               })
             }
@@ -127,19 +182,12 @@ export function WriteOutputTab({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Dataset origen</Label>
-                  <select
+                  <Label className="text-xs">Dataset de origen</Label>
+                  <DatasetSelect
                     value={s.from}
-                    onChange={(e) => updateSheet(idx, { from: e.target.value })}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="">Selecciona...</option>
-                    {availableSources.map((src) => (
-                      <option key={src} value={src}>
-                        {src}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => updateSheet(idx, { from: v })}
+                    options={availableSources}
+                  />
                 </div>
                 <label className="flex items-end gap-2 text-xs pb-2">
                   <input
@@ -171,7 +219,7 @@ export function WriteOutputTab({
       {/* Formatos */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <Label>Formatos de columnas (opcional)</Label>
+          <Label>Formato de columnas (opcional)</Label>
           <Button
             size="sm"
             variant="outline"
@@ -208,7 +256,7 @@ export function WriteOutputTab({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Formato</Label>
+                  <Label className="text-xs">Tipo de formato</Label>
                   <select
                     value={f.format}
                     onChange={(e) =>
@@ -218,9 +266,9 @@ export function WriteOutputTab({
                     }
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   >
-                    {FORMATS.map((fmt) => (
-                      <option key={fmt} value={fmt}>
-                        {fmt}
+                    {entries(OUTPUT_FORMAT_LABELS).map(([val]) => (
+                      <option key={val} value={val}>
+                        {outputFormatLabel(val)}
                       </option>
                     ))}
                   </select>
@@ -270,13 +318,13 @@ export function WriteOutputTab({
             <p>
               Por defecto, las columnas cuyo nombre contenga{" "}
               <strong>&quot;Penalidad&quot;</strong> se pintan de azul claro
-              (#0070C0) y las que contengan <strong>&quot;Clawback&quot;</strong>
-              {" "}de azul oscuro (#002060), ambas con letra blanca.
+              (#0070C0) y las que contengan <strong>&quot;Clawback&quot;</strong>{" "}
+              de azul oscuro (#002060), ambas con letra blanca.
             </p>
             <p>
-              Aquí puedes agregar reglas adicionales o sobrescribir los defaults.
-              Las reglas que agregues tienen prioridad sobre las globales. El
-              match es <em>case-insensitive</em> y por substring.
+              Aquí puedes agregar reglas adicionales o sobrescribir los
+              defaults. Las reglas que agregues tienen prioridad. La búsqueda
+              ignora mayúsculas y tildes y matchea por substring.
             </p>
           </div>
         </div>
@@ -309,7 +357,9 @@ export function WriteOutputTab({
                       type="color"
                       value={normalizeHexInput(h.fillColor)}
                       onChange={(e) =>
-                        updateHighlight(idx, { fillColor: e.target.value.toUpperCase() })
+                        updateHighlight(idx, {
+                          fillColor: e.target.value.toUpperCase(),
+                        })
                       }
                       className="h-10 w-10 rounded border border-input cursor-pointer"
                     />
@@ -330,7 +380,9 @@ export function WriteOutputTab({
                       type="color"
                       value={normalizeHexInput(h.fontColor)}
                       onChange={(e) =>
-                        updateHighlight(idx, { fontColor: e.target.value.toUpperCase() })
+                        updateHighlight(idx, {
+                          fontColor: e.target.value.toUpperCase(),
+                        })
                       }
                       className="h-10 w-10 rounded border border-input cursor-pointer"
                     />

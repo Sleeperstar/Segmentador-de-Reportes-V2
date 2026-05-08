@@ -4,6 +4,32 @@ Este documento registra los cambios más importantes realizados en el proyecto d
 
 ---
 
+## [v0.7] — 2026-05-07
+
+### Editor de plantillas más amigable para usuarios no técnicos
+
+Cambios solo en la UI del wizard de administración (`/admin/templates`). El motor del pipeline, los tipos y el formato JSON guardado en BD **no cambian**: las plantillas existentes se cargan y guardan exactamente igual.
+
+- **Traducciones inglés→español**: nuevos helpers en `webapp/lib/wizard/labels.ts` cubren `FilterOp`, `DeriveOp`, agregados (`sum`, `count`, …), `scope`, `onMismatch`, formato de columnas, estrategia de cabecera, transformaciones de variable y tipos de step. El JSON sigue guardando los mismos códigos en inglés; solo cambia la presentación.
+- **Selects con nombres amigables en lugar de IDs sueltos**:
+  - `<DatasetSelect>` reemplaza el input de "ID del dataset origen" por un select que muestra `Reporte CORTE 1 (Cargar hoja Excel)`, `Filtrar filas: base`, etc.
+  - `<DatasetMultiSelect>` reemplaza los inputs `coma-separados` para listas de datasets (reportSources, datasets de validación). IDs huérfanos (apuntan a steps inexistentes) se muestran con tag amarillo "no encontrado" para que el admin los corrija sin perderlos.
+- **Preview de regex en vivo**: el campo "Expresión regular del nombre de archivo" (paso 2) ahora ofrece un campo de prueba; al tipear un nombre de ejemplo se muestran las capturas en pills verdes (`corte=1`, `mes=MARZO`) o un mensaje rojo si la regex no compila o no matchea.
+- **Editor visual de tabla de equivalencias**: la operación `lookup` en transforms cambió el campo JSON crudo por un editor key-value con filas "valor original" → "valor destino" y botones para agregar/eliminar.
+- **Inserción de variables por click**: en el paso 6, panel lateral con las variables disponibles (`{AGENCIA}`, `{PERIODO_COMI}`, etc.) que se insertan en el campo de nombre de archivo activo con un click.
+- **ID interno auto-generado para pasos nuevos**: al crear una hoja, filtro o columna calculada, el identificador interno se genera desde el nombre (`reporte_corte_1`, `derive_agencia_normalizada`). Botón "Personalizar" para cambiarlo manualmente. **Plantillas existentes con IDs custom se respetan**: la auto-generación no se aplica si el ID ya viene asignado.
+- **Multi-cabecera sin sensación de "no guardó"**: el input de filas de `multi_level` ahora actualiza el valor en `onChange` además de `onBlur`.
+- **Mensajes de error humanos**: `humanizePath()` traduce paths técnicos (ej: `$.steps[3].agencyColumn.report`) a frases como "Paso 4 'segmenta' (Segmentar por agencia) → falta la columna de agencia del reporte". El path técnico se mantiene como detalle expandible para soporte. Se aplica tanto en la pantalla principal del editor como en la pestaña Avanzado.
+- **Pestaña JSON marcada como "Avanzado (JSON)"** con icono de llave y banner naranja de advertencia: *"Edición técnica. Cambios incorrectos pueden romper la plantilla."*. Botón "Reset" renombrado a "Restaurar".
+- **Cambios técnicos**:
+  - Nuevos archivos: `webapp/lib/wizard/labels.ts`, `webapp/lib/wizard/path-translator.ts` (+ tests), `webapp/lib/wizard/describe-dataset.ts`.
+  - Nuevos componentes: `wizard/components/{dataset-select, dataset-multi-select, regex-preview, lookup-table-editor, variables-panel}.tsx`.
+  - Refactor de las 7 pestañas existentes para usar los componentes y labels nuevos.
+  - 12 tests adicionales en `lib/wizard/path-translator.test.ts` (106 tests verdes en total).
+- **Migración**: ninguna. Las 4 plantillas en BD se cargan y guardan sin alterar el JSON.
+
+---
+
 ## [v0.6] — 2026-05-06
 
 ### Nueva funcionalidad: Unificar agencias por RUC

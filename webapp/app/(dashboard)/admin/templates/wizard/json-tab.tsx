@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Check } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check } from "lucide-react";
 
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { Pipeline } from "@/lib/pipeline/types";
 import { validatePipeline } from "@/lib/pipeline/validator";
+import { humanizePath } from "@/lib/wizard/path-translator";
 
 export function JsonTab({
   pipeline,
@@ -50,15 +51,27 @@ export function JsonTab({
 
   return (
     <div className="space-y-3">
+      <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <p className="font-medium">Edición técnica.</p>
+          <p>
+            Cambios incorrectos pueden romper la plantilla. Usa esta pestaña
+            solo si conoces el formato del pipeline. Para edición normal usa
+            las pestañas anteriores.
+          </p>
+        </div>
+      </div>
+
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <p className="text-sm text-muted-foreground max-w-2xl">
           Edita el pipeline directamente como JSON. Útil para ajustes finos o
-          casos no cubiertos por el wizard. Los cambios se aplican al estado del
-          editor cuando presionas “Aplicar”.
+          casos no cubiertos por el wizard. Los cambios se aplican al estado
+          del editor cuando presionas “Aplicar”.
         </p>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={reset}>
-            Reset
+            Restaurar
           </Button>
           <Button size="sm" onClick={apply}>
             Aplicar
@@ -73,10 +86,16 @@ export function JsonTab({
             {error}
           </div>
           {issues.length > 0 && (
-            <ul className="mt-2 list-disc list-inside text-xs text-red-700 space-y-0.5">
+            <ul className="mt-2 list-disc list-inside text-xs text-red-700 space-y-1">
               {issues.map((i, idx) => (
                 <li key={idx}>
-                  <code>{i.path}</code> — {i.message}
+                  {humanizePath(i.path, pipeline)} — {i.message}
+                  <details className="ml-4 mt-0.5">
+                    <summary className="cursor-pointer text-[10px] text-red-600 hover:underline">
+                      Ver path técnico
+                    </summary>
+                    <code className="text-[10px]">{i.path}</code>
+                  </details>
                 </li>
               ))}
             </ul>

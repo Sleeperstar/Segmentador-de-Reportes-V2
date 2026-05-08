@@ -1,11 +1,22 @@
 "use client";
 
-import { Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { CommaSeparatedInput } from "./comma-input";
+import { DatasetSelect } from "./components/dataset-select";
+import { LookupTableEditor } from "./components/lookup-table-editor";
+import {
+  DERIVE_OP_LABELS,
+  FILTER_OP_LABELS,
+  deriveOpLabel,
+  entries,
+  filterOpLabel,
+} from "@/lib/wizard/labels";
+import type { DatasetOption } from "@/lib/wizard/describe-dataset";
 import type {
   DeriveColumnStep,
   DeriveOp,
@@ -17,29 +28,15 @@ import type {
 
 type TransformStep = FilterRowsStep | DeriveColumnStep;
 
-const FILTER_OPS: FilterOp[] = [
-  "equals",
-  "not_equals",
-  "in",
-  "not_in",
-  "contains",
-  "not_null",
-  "is_null",
-  "gt",
-  "gte",
-  "lt",
-  "lte",
-  "between",
-];
-
-const DERIVE_OPS: DeriveOp[] = [
-  "strip_suffix",
-  "lookup",
-  "normalize_name",
-  "concat",
-  "regex_replace",
-  "constant",
-];
+function slugify(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/__+/g, "_");
+}
 
 export function TransformsTab({
   steps,
@@ -48,7 +45,7 @@ export function TransformsTab({
 }: {
   steps: TransformStep[];
   onChange: (steps: TransformStep[]) => void;
-  availableSources: string[];
+  availableSources: DatasetOption[];
 }) {
   function update(idx: number, patch: Partial<TransformStep>) {
     onChange(
@@ -62,7 +59,7 @@ export function TransformsTab({
       {
         id: `filtro_${steps.length + 1}`,
         type: "filter_rows",
-        source: availableSources[0] ?? "",
+        source: availableSources[0]?.id ?? "",
         filters: [{ column: "", op: "equals", value: "" }],
       } as FilterRowsStep,
     ]);
@@ -74,7 +71,7 @@ export function TransformsTab({
       {
         id: `derive_${steps.length + 1}`,
         type: "derive_column",
-        source: availableSources[0] ?? "",
+        source: availableSources[0]?.id ?? "",
         newColumn: "",
         op: "strip_suffix",
         sourceColumns: [],
@@ -99,17 +96,17 @@ export function TransformsTab({
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Pasos de transformación que se aplican secuencialmente sobre los
-          datasets cargados (filtros y columnas derivadas).
+          Pasos opcionales para limpiar o enriquecer los datasets antes de
+          segmentar (filtrar filas y calcular columnas nuevas).
         </p>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={addFilter}>
             <Plus className="h-4 w-4" />
-            Filtro
+            Filtrar filas
           </Button>
           <Button size="sm" variant="outline" onClick={addDerive}>
             <Plus className="h-4 w-4" />
-            Derivar columna
+            Calcular columna
           </Button>
         </div>
       </div>
@@ -151,31 +148,93 @@ export function TransformsTab({
   );
 }
 
+/**
+ * Cabecera común para los cards de transformación. Maneja auto-ID con botón
+ * "Personalizar", botones de mover y eliminar.
+ */
 function StepHeader({
   badge,
-  id,
-  onIdChange,
+  step,
+  onUpdateId,
+  derivedAutoId,
   idx,
   last,
   onRemove,
   onMove,
 }: {
   badge: string;
-  id: string;
-  onIdChange: (v: string) => void;
+  step: TransformStep;
+  onUpdateId: (id: string) => void;
+  derivedAutoId: string;
   idx: number;
   last: boolean;
   onRemove: () => void;
   onMove: (d: -1 | 1) => void;
 }) {
+  const initialModeRef = useRef<"auto" | "custom" | null>(null);
+  if (initialModeRef.current === null) {
+    const looksGenerated =
+      step.type === "filter_rows"
+        ? /^filtro_\d+$/.test(step.id)
+        : /^derive_\d+$/.test(step.id);
+    if (
+      !step.id ||
+      step.id === derivedAutoId ||
+      (looksGenerated && !derivedAutoId)
+    ) {
+      initialModeRef.current = "auto";
+    } else {
+      initialModeRef.current = "custom";
+    }
+  }
+  const [showIdEditor, setShowIdEditor] = useState(
+    initialModeRef.current === "custom"
+  );
+
+  const prevAutoRef = useRef(derivedAutoId);
+  useEffect(() => {
+    if (showIdEditor) {
+      prevAutoRef.current = derivedAutoId;
+      return;
+    }
+    if (derivedAutoId === prevAutoRef.current) return;
+    if (derivedAutoId && derivedAutoId !== step.id) {
+      onUpdateId(derivedAutoId);
+    }
+    prevAutoRef.current = derivedAutoId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [derivedAutoId, showIdEditor]);
+
   return (
     <div className="flex items-start gap-3 mb-3">
       <span className="rounded bg-brand-primary-100 text-brand-primary-700 text-xs font-medium px-2 py-1 mt-2">
         {badge}
       </span>
       <div className="space-y-1 flex-1">
-        <Label className="text-xs">ID del paso</Label>
-        <Input value={id} onChange={(e) => onIdChange(e.target.value)} />
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Identificador interno</Label>
+          {!showIdEditor && (
+            <button
+              type="button"
+              onClick={() => setShowIdEditor(true)}
+              className="text-[11px] text-brand-primary-700 hover:underline inline-flex items-center gap-1"
+            >
+              <Pencil className="h-3 w-3" />
+              Personalizar
+            </button>
+          )}
+        </div>
+        {showIdEditor ? (
+          <Input
+            value={step.id}
+            onChange={(e) => onUpdateId(e.target.value)}
+            className="font-mono text-xs"
+          />
+        ) : (
+          <div className="h-10 px-3 flex items-center rounded-md border border-dashed border-input bg-background text-xs font-mono text-muted-foreground">
+            {step.id || "(se generará automáticamente)"}
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-1 mt-6">
         <Button
@@ -216,7 +275,7 @@ function FilterRowsCard({
   step: FilterRowsStep;
   idx: number;
   last: boolean;
-  availableSources: string[];
+  availableSources: DatasetOption[];
   onUpdate: (patch: Partial<FilterRowsStep>) => void;
   onRemove: () => void;
   onMove: (d: -1 | 1) => void;
@@ -237,12 +296,20 @@ function FilterRowsCard({
     onUpdate({ filters: step.filters.filter((_, j) => j !== i) });
   }
 
+  // Sugerencia de auto-ID para filter_rows: "filtro_" + slug del primer filter
+  const firstFilter = step.filters[0];
+  const filterDesc = firstFilter?.column
+    ? slugify(`${firstFilter.column}_${firstFilter.op}`)
+    : "";
+  const autoId = filterDesc ? `filtro_${filterDesc}` : "";
+
   return (
     <div className="rounded-lg border bg-muted/30 p-4">
       <StepHeader
-        badge="filter_rows"
-        id={step.id}
-        onIdChange={(v) => onUpdate({ id: v })}
+        badge="Filtrar filas"
+        step={step}
+        derivedAutoId={autoId}
+        onUpdateId={(v) => onUpdate({ id: v })}
         idx={idx}
         last={last}
         onRemove={onRemove}
@@ -251,19 +318,12 @@ function FilterRowsCard({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
         <div className="space-y-1">
-          <Label className="text-xs">Dataset origen</Label>
-          <select
+          <Label className="text-xs">Dataset de origen</Label>
+          <DatasetSelect
             value={step.source}
-            onChange={(e) => onUpdate({ source: e.target.value })}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">Selecciona...</option>
-            {availableSources.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => onUpdate({ source: v })}
+            options={availableSources}
+          />
         </div>
         <div className="space-y-1">
           <Label className="text-xs">Combinar filtros con</Label>
@@ -274,72 +334,82 @@ function FilterRowsCard({
             }
             className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
           >
-            <option value="and">AND (todos deben cumplirse)</option>
-            <option value="or">OR (alguno debe cumplirse)</option>
+            <option value="and">Y (todos deben cumplirse)</option>
+            <option value="or">O (al menos uno debe cumplirse)</option>
           </select>
         </div>
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs">Filtros</Label>
+          <Label className="text-xs">Condiciones</Label>
           <Button size="sm" variant="ghost" onClick={addRow}>
             <Plus className="h-4 w-4" />
-            Filtro
+            Condición
           </Button>
         </div>
-        {step.filters.map((f, i) => (
-          <div
-            key={i}
-            className="grid grid-cols-1 md:grid-cols-[1fr_140px_1fr_auto] gap-2"
-          >
-            <Input
-              value={f.column}
-              onChange={(e) => setFilter(i, { column: e.target.value })}
-              placeholder="Columna"
-            />
-            <select
-              value={f.op}
-              onChange={(e) => setFilter(i, { op: e.target.value as FilterOp })}
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        {step.filters.map((f, i) => {
+          const usesArrayValue = f.op === "in" || f.op === "not_in";
+          const noValueOp = f.op === "is_null" || f.op === "not_null";
+          return (
+            <div
+              key={i}
+              className="grid grid-cols-1 md:grid-cols-[1fr_180px_1fr_auto] gap-2 items-start"
             >
-              {FILTER_OPS.map((op) => (
-                <option key={op} value={op}>
-                  {op}
-                </option>
-              ))}
-            </select>
-            <Input
-              value={
-                Array.isArray(f.value)
-                  ? f.value.join(", ")
-                  : (f.value ?? "").toString()
-              }
-              onChange={(e) => {
-                const raw = e.target.value;
-                const useArr = f.op === "in" || f.op === "not_in";
-                setFilter(i, {
-                  value: useArr
-                    ? raw.split(",").map((s) => s.trim())
-                    : raw,
-                });
-              }}
-              placeholder={
-                f.op === "in" || f.op === "not_in"
-                  ? "Valor1, Valor2"
-                  : "Valor (usa $VAR para variables)"
-              }
-            />
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => removeRow(i)}
-              title="Eliminar"
-            >
-              <Trash2 className="h-4 w-4 text-red-600" />
-            </Button>
-          </div>
-        ))}
+              <Input
+                value={f.column}
+                onChange={(e) => setFilter(i, { column: e.target.value })}
+                placeholder="Nombre de la columna"
+              />
+              <select
+                value={f.op}
+                onChange={(e) => setFilter(i, { op: e.target.value as FilterOp })}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                title={FILTER_OP_LABELS[f.op]?.hint}
+              >
+                {entries(FILTER_OP_LABELS).map(([val]) => (
+                  <option key={val} value={val}>
+                    {filterOpLabel(val)}
+                  </option>
+                ))}
+              </select>
+              {noValueOp ? (
+                <div className="h-10 px-3 flex items-center text-xs text-muted-foreground italic">
+                  (sin valor)
+                </div>
+              ) : (
+                <Input
+                  value={
+                    Array.isArray(f.value)
+                      ? f.value.join(", ")
+                      : (f.value ?? "").toString()
+                  }
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setFilter(i, {
+                      value: usesArrayValue
+                        ? raw.split(",").map((s) => s.trim())
+                        : raw,
+                    });
+                  }}
+                  placeholder={
+                    usesArrayValue
+                      ? "Valor1, Valor2"
+                      : "Valor o $VAR para usar variable"
+                  }
+                />
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => removeRow(i)}
+                title="Eliminar condición"
+              >
+                <Trash2 className="h-4 w-4 text-red-600" />
+              </Button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -357,17 +427,21 @@ function DeriveColumnCard({
   step: DeriveColumnStep;
   idx: number;
   last: boolean;
-  availableSources: string[];
+  availableSources: DatasetOption[];
   onUpdate: (patch: Partial<DeriveColumnStep>) => void;
   onRemove: () => void;
   onMove: (d: -1 | 1) => void;
 }) {
+  // Auto-ID a partir de la columna nueva
+  const autoId = step.newColumn ? `derive_${slugify(step.newColumn)}` : "";
+
   return (
     <div className="rounded-lg border bg-muted/30 p-4">
       <StepHeader
-        badge="derive_column"
-        id={step.id}
-        onIdChange={(v) => onUpdate({ id: v })}
+        badge="Calcular columna"
+        step={step}
+        derivedAutoId={autoId}
+        onUpdateId={(v) => onUpdate({ id: v })}
         idx={idx}
         last={last}
         onRemove={onRemove}
@@ -376,19 +450,12 @@ function DeriveColumnCard({
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
         <div className="space-y-1">
-          <Label className="text-xs">Dataset origen</Label>
-          <select
+          <Label className="text-xs">Dataset de origen</Label>
+          <DatasetSelect
             value={step.source}
-            onChange={(e) => onUpdate({ source: e.target.value })}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">Selecciona...</option>
-            {availableSources.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => onUpdate({ source: v })}
+            options={availableSources}
+          />
         </div>
         <div className="space-y-1">
           <Label className="text-xs">Operación</Label>
@@ -396,16 +463,20 @@ function DeriveColumnCard({
             value={step.op}
             onChange={(e) => onUpdate({ op: e.target.value as DeriveOp })}
             className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            title={DERIVE_OP_LABELS[step.op]?.hint}
           >
-            {DERIVE_OPS.map((op) => (
-              <option key={op} value={op}>
-                {op}
+            {entries(DERIVE_OP_LABELS).map(([val]) => (
+              <option key={val} value={val}>
+                {deriveOpLabel(val)}
               </option>
             ))}
           </select>
+          <p className="text-[10px] text-muted-foreground">
+            {DERIVE_OP_LABELS[step.op]?.hint}
+          </p>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Nueva columna</Label>
+          <Label className="text-xs">Nombre de la columna nueva</Label>
           <Input
             value={step.newColumn}
             onChange={(e) => onUpdate({ newColumn: e.target.value })}
@@ -415,7 +486,7 @@ function DeriveColumnCard({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs">Columnas fuente (separadas por coma)</Label>
+        <Label className="text-xs">Columnas de origen (separadas por coma)</Label>
         <CommaSeparatedInput
           value={step.sourceColumns ?? []}
           onChange={(cols) => onUpdate({ sourceColumns: cols })}
@@ -424,7 +495,9 @@ function DeriveColumnCard({
 
         {step.op === "strip_suffix" && (
           <div className="space-y-1">
-            <Label className="text-xs">Sufijos a eliminar (separados por coma)</Label>
+            <Label className="text-xs">
+              Sufijos a eliminar (separados por coma)
+            </Label>
             <CommaSeparatedInput
               value={step.suffixes ?? []}
               onChange={(suffs) => onUpdate({ suffixes: suffs })}
@@ -435,7 +508,7 @@ function DeriveColumnCard({
 
         {step.op === "concat" && (
           <div className="space-y-1">
-            <Label className="text-xs">Separador</Label>
+            <Label className="text-xs">Separador entre columnas</Label>
             <Input
               value={step.separator ?? ""}
               onChange={(e) => onUpdate({ separator: e.target.value })}
@@ -447,7 +520,7 @@ function DeriveColumnCard({
         {step.op === "regex_replace" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs">Pattern</Label>
+              <Label className="text-xs">Patrón (regex)</Label>
               <Input
                 value={step.pattern ?? ""}
                 onChange={(e) => onUpdate({ pattern: e.target.value })}
@@ -455,7 +528,7 @@ function DeriveColumnCard({
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Replacement</Label>
+              <Label className="text-xs">Texto de reemplazo</Label>
               <Input
                 value={step.replacement ?? ""}
                 onChange={(e) => onUpdate({ replacement: e.target.value })}
@@ -475,22 +548,10 @@ function DeriveColumnCard({
         )}
 
         {step.op === "lookup" && (
-          <div className="space-y-1">
-            <Label className="text-xs">
-              Tabla de lookup (JSON: {`{"valorOrig":"valorDest"}`})
-            </Label>
-            <Input
-              value={JSON.stringify(step.lookupTable ?? {})}
-              onChange={(e) => {
-                try {
-                  onUpdate({ lookupTable: JSON.parse(e.target.value) });
-                } catch {
-                  /* ignore */
-                }
-              }}
-              className="font-mono text-xs"
-            />
-          </div>
+          <LookupTableEditor
+            value={step.lookupTable ?? {}}
+            onChange={(next) => onUpdate({ lookupTable: next })}
+          />
         )}
       </div>
     </div>

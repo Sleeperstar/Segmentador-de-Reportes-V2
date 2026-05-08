@@ -163,45 +163,43 @@ Desde ahí puedes:
 
 ### Crear o editar una plantilla — Wizard de 6 pasos
 
-El editor tiene 7 pestañas:
+El editor tiene 7 pestañas. Desde **v0.7** la interfaz usa nombres en español y selects con nombres amigables en lugar de IDs sueltos. El JSON guardado sigue siendo el mismo, así que las plantillas existentes se cargan y guardan sin cambios.
 
 #### 1. Datos básicos
-- **Nombre**: nombre visible para los usuarios.
-- **Descripción**: descripción opcional del reporte.
-- **Activa**: si está marcada, los usuarios pueden verla y ejecutarla.
+- **Nombre de la plantilla**: nombre visible para los usuarios al elegir la plantilla.
+- **Descripción** (opcional): texto que aparece debajo del nombre como ayuda.
+- **Plantilla activa**: si la desmarcas, queda guardada pero no aparece en la pantalla de ejecución (útil para iterar sin afectar a los usuarios).
 
 #### 2. Inputs
-- **Expresión regular del nombre de archivo**: define el patrón que debe tener el nombre del archivo subido. Usa grupos nombrados para capturar variables.
+- **Expresión regular del nombre de archivo**: patrón que debe tener el nombre del archivo subido. Usa grupos nombrados para capturar variables.
 
   Ejemplo: `Reportes AGENCIA LIMA Corte (?<corte>\d+) (?<mes>\w+) (?<anio>\d{4})`
 
-  Los símbolos `\d+`, `\w+`, `\d{4}` son sintaxis de regex estándar:
-  - `\d` = dígito (0-9)
-  - `\w` = letra o dígito
-  - `+` = uno o más
-  - `{4}` = exactamente 4 veces
+  - `\d` = dígito (0-9), `\w` = letra o dígito, `+` = uno o más, `{4}` = exactamente 4 veces.
+  - **Preview en vivo**: tipea un nombre de archivo de ejemplo y verás las capturas en pills verdes (`corte=1`, `mes=MARZO`) o un mensaje rojo si la regex no compila o no matchea.
 
-- **Variables derivadas**: transforma lo capturado en la regex para generar variables adicionales. Ejemplo: la transformación `monthYearToYYYYMM` convierte `mes=MARZO` + `anio=2026` en `PERIODO_COMI=202603`.
+- **Variables derivadas**: transforma lo capturado en la regex para generar variables adicionales. Ejemplo: la transformación "Mes + Año → YYYYMM" convierte `mes=MARZO` + `anio=2026` en `PERIODO_COMI=202603`.
 
 #### 3. Hojas
 Define qué hojas del Excel se cargan como datasets. Para cada hoja:
-- **ID del dataset**: nombre interno para referenciar en otros pasos.
-- **Nombre de la hoja**: nombre exacto tal como aparece en el Excel.
-- **Detección de cabecera**:
-  - `auto`: busca la fila que contenga las columnas esperadas (recomendado).
-  - `fixed_row`: la cabecera siempre está en una fila específica.
-  - `multi_level`: cabecera en múltiples filas (reportes complejos).
+- **Nombre exacto de la hoja en el Excel**: nombre tal como aparece en el archivo (ej: `Reporte CORTE 1 Horizontal`).
+- **Identificador interno**: se genera automáticamente desde el nombre (ej: `reporte_corte_1_horizontal`). Click en **"Personalizar"** para cambiarlo manualmente. **Plantillas existentes con IDs custom se respetan** y se muestran tal cual.
+- **Cómo detectar la fila de cabecera**:
+  - **Detectar automáticamente** (recomendado): el sistema busca la fila que contenga las columnas esperadas.
+  - **Fila fija**: indica exactamente en qué fila está la cabecera (ej: 1).
+  - **Cabecera en varias filas**: la cabecera se compone uniendo los valores de varias filas (ej: 1 y 2).
 
 #### 4. Transformaciones
-Pasos opcionales que se aplican sobre los datasets:
-- **filter_rows**: filtra filas por condición. Ejemplo: `CANAL = "Agencias"`.
-- **derive_column**: crea una columna calculada a partir de otras.
+Pasos opcionales para limpiar o enriquecer los datasets antes de segmentar:
+- **Filtrar filas**: descarta filas que no cumplen una condición. Ejemplo: `CANAL es igual a "Agencias"`. Los operadores tienen nombres en español ("es igual a", "está en la lista", "mayor que", …).
+- **Calcular columna**: crea una columna nueva a partir de otras. Operaciones disponibles: "Quitar texto al final", "Tabla de equivalencias" (editor visual key-value, sin JSON), "Normalizar texto", "Concatenar columnas", "Reemplazar con patrón (regex)" y "Valor constante".
 
 #### 5. Segmentar + Validar
-- **Segmentación**: define qué datasets se dividen por agencia y qué columna usarla.
-  - **Datasets de reporte**: los datasets de las hojas de reporte (ej: `horizontal, vertical, marcha_blanca`).
-  - **Dataset base**: el dataset BASE que también se segmenta por agencia (columna puede ser distinta, ej: `ASESOR`).
-  - **Alias**: si una agencia tiene nombres distintos en reportes vs. base, agrégala aquí. Ejemplo: `EXPORTEL S.A.C.` y `EXPORTEL PROVINCIA` se agrupan como `EXPORTEL S.A.C.`
+- **Segmentación**: define qué datasets se dividen por agencia y qué columna usar.
+  - **Datasets de reporte a segmentar**: lista de datasets de las hojas de reporte mediante checkboxes (con el nombre amigable de cada hoja).
+  - **Dataset base** (opcional): el dataset BASE que también se segmenta por agencia, elegido desde un select con nombres amigables.
+  - **Columna de agencia en los reportes** y **en la base**: nombre de la columna que contiene la agencia en cada lado (ej: `AGENCIA` en reporte, `ASESOR` en base).
+  - **Alias de agencias**: si una agencia tiene nombres distintos en reportes vs. base, agrégala aquí. Ejemplo: `EXPORTEL S.A.C.` y `EXPORTEL PROVINCIA` se agrupan como `EXPORTEL S.A.C.`
   - **Unificar agencias por RUC (opcional)**: úsalo cuando la columna de agencia del reporte trae valores compuestos que deben ir en un único archivo por agencia real. Ejemplo: en "Provincias Norte Corte 1" la columna `AGENCIA` del reporte trae `ALIV TELECOM S.A.C. Áncash`, `ALIV TELECOM S.A.C. La Libertad`, `ALIV TELECOM S.A.C. Lambayeque` y `ALIV TELECOM S.A.C. Piura`, pero todas comparten el mismo RUC y el negocio quiere un solo `Reporte ALIV TELECOM S.A.C. Corte 1 202603.xlsx`.
     - **Columna RUC en reportes**: nombre de la columna en las hojas de reporte que contiene el RUC (ej: `RUC`).
     - **Columna RUC en base**: nombre de la columna en la hoja BASE que contiene el RUC (ej: `DNI_ASESOR`).
@@ -209,17 +207,18 @@ Pasos opcionales que se aplican sobre los datasets:
     - Si los 3 campos están vacíos, la plantilla **no unifica** (comportamiento estándar).
     - La validación sigue mostrando una fila por sub-agencia para que sigas detectando descuadres por departamento, aunque el ZIP entregue un único archivo por agencia canónica.
 - **Validaciones**: reglas que verifican que los totales cuadren entre datasets.
-  - `per_agency`: compara el total por agencia (recomendado).
-  - `global`: compara el total global (usar con cuidado).
-  - Cada regla tiene dos lados: **Hoja Reporte** (típicamente `sum(ALTAS)` de una hoja de reporte) y **Hoja Base** (típicamente `count(COD_PEDIDO)` de la hoja BASE).
-  - `onMismatch: warn` muestra advertencia sin detener; `error` detiene el proceso.
+  - **Alcance Por agencia** (recomendado): compara el total de cada agencia por separado.
+  - **Alcance Total general**: compara los totales sumados de todos los datos (usar con cuidado).
+  - Cada regla tiene dos lados: **Hoja Reporte** (típicamente `Sumar(ALTAS)` de una hoja de reporte) y **Hoja Base** (típicamente `Contar(COD_PEDIDO)` de la hoja BASE). Los datasets se eligen con checkboxes.
+  - **Si los totales no cuadran**: "Advertencia (no detiene el proceso)" o "Error (detiene el proceso)".
 
 #### 6. Salida
 Configura el archivo ZIP generado:
-- **Plantilla del nombre del ZIP**: ej: `Reportes AGENCIA LIMA Corte 1 {PERIODO_COMI}.zip`
-- **Plantilla de nombre por agencia**: ej: `Reporte {AGENCIA} Corte 1 {PERIODO_COMI}.xlsx`
-- **Hojas del archivo por agencia**: qué datasets incluir en cada Excel de agencia. La opción "Filtrar a agencia" (activa por defecto) incluye solo los datos de esa agencia; desactivarla pondría todos los datos.
-- **Formatos de columnas**: aplica formato numérico a columnas específicas (`integer`, `currency`, `percent`, `number`).
+- **Nombre del archivo ZIP**: ej: `Reportes AGENCIA LIMA Corte 1 {PERIODO_COMI}.zip`
+- **Nombre del archivo Excel por agencia**: ej: `Reporte {AGENCIA} Corte 1 {PERIODO_COMI}.xlsx`
+- **Variables disponibles**: panel a la derecha con las variables del contexto (`{AGENCIA}`, `{PERIODO_COMI}`, …). Click en una variable para insertarla en el campo de nombre activo.
+- **Hojas del archivo Excel por agencia**: qué datasets incluir en cada Excel de agencia. El "Dataset de origen" se elige desde un select con nombres amigables. La opción "Filtrar a agencia" (activa por defecto) incluye solo los datos de esa agencia; desactivarla pondría todos los datos.
+- **Formato de columnas**: aplica formato numérico a columnas específicas ("Entero", "Moneda", "Porcentaje", "Número decimal").
 - **Resaltado de cabeceras**: pinta celdas de cabecera con un color específico cuando el nombre de la columna contiene determinados términos.
   - **Defaults globales** (siempre activos): columnas que contengan **"Penalidad"** se pintan de azul claro `#0070C0`, y las que contengan **"Clawback"** de azul oscuro `#002060`. Ambas con letra blanca. No requieren configuración.
   - **Reglas custom**: para añadir más términos (ej: "Multa", "Bono") o sobrescribir los defaults con otros colores, agrega reglas con el botón "+ Regla". Cada una define:
@@ -227,8 +226,12 @@ Configura el archivo ZIP generado:
     - **Color de relleno** y **color de fuente** en hex `#RRGGBB`.
   - **Prioridad**: las reglas custom se evalúan antes que los defaults; la primera que matchea gana. Si ninguna matchea, la cabecera usa el naranja institucional `#FF6B00`.
 
-#### 7. JSON (avanzado)
-Edita el pipeline directamente en formato JSON. Útil para configuraciones que el wizard no cubre. El sistema valida el JSON antes de aplicar.
+#### 7. Avanzado (JSON)
+Edita el pipeline directamente en formato JSON. Útil para configuraciones que el wizard no cubre. La pestaña tiene un banner de advertencia: cambios incorrectos pueden romper la plantilla, así que úsala solo si conoces el formato del pipeline.
+
+- Botón **Aplicar**: valida el JSON y lo aplica al estado del editor.
+- Botón **Restaurar**: vuelve al JSON actual del editor (descarta cambios).
+- Si el JSON tiene problemas, los errores se muestran en español (ej: "Paso 4 'segmenta' (Segmentar por agencia) → falta la columna de agencia del reporte"). El path técnico (`$.steps[3].agencyColumn.report`) sigue disponible como detalle expandible para soporte.
 
 ### Límites del sistema
 

@@ -2,7 +2,13 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save, AlertCircle, Check } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Loader2,
+  Save,
+  Wrench,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +28,8 @@ import type {
   ValidateStep,
   WriteOutputStep,
 } from "@/lib/pipeline/types";
+import { buildDatasetOptions } from "@/lib/wizard/describe-dataset";
+import { humanizePath } from "@/lib/wizard/path-translator";
 import { BasicsTab } from "./wizard/basics-tab";
 import { InputsTab } from "./wizard/inputs-tab";
 import { LoadSheetsTab } from "./wizard/load-sheets-tab";
@@ -100,15 +108,19 @@ export function TemplateEditor({
     [pipeline.steps]
   );
 
-  const availableSources = useMemo(() => {
-    const ids = new Set<string>();
-    for (const s of pipeline.steps) {
-      if (s.type !== "validate" && s.type !== "write_output") {
-        ids.add(s.id);
-      }
+  const availableSources = useMemo(
+    () => buildDatasetOptions(pipeline.steps),
+    [pipeline.steps]
+  );
+
+  const availableVariables = useMemo(() => {
+    const vars = new Set<string>();
+    vars.add("AGENCIA");
+    for (const dv of pipeline.inputs?.derivedVariables ?? []) {
+      if (dv.name?.trim()) vars.add(dv.name.trim());
     }
-    return Array.from(ids);
-  }, [pipeline.steps]);
+    return Array.from(vars);
+  }, [pipeline.inputs]);
 
   /* ---------- Mutators que reescriben pipeline.steps ---------- */
 
@@ -138,7 +150,6 @@ export function TemplateEditor({
   ) {
     const filtered = pipeline.steps.filter((s) => s.type !== type);
     if (next) {
-      // write_output siempre va al final, validate antes de write_output, split antes de validate
       const order: Record<PipelineStep["type"], number> = {
         load_sheet: 0,
         filter_rows: 1,
@@ -218,7 +229,10 @@ export function TemplateEditor({
             <TabsTrigger value="transforms">4. Transformaciones</TabsTrigger>
             <TabsTrigger value="split">5. Segmentar + validar</TabsTrigger>
             <TabsTrigger value="output">6. Salida</TabsTrigger>
-            <TabsTrigger value="json">JSON</TabsTrigger>
+            <TabsTrigger value="json" className="gap-1.5">
+              <Wrench className="h-3.5 w-3.5" />
+              Avanzado (JSON)
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="basics">
@@ -267,6 +281,7 @@ export function TemplateEditor({
             <WriteOutputTab
               step={writeOutput}
               availableSources={availableSources}
+              availableVariables={availableVariables}
               onChange={(s) => replaceStepByType("write_output", s)}
             />
           </TabsContent>
@@ -283,10 +298,16 @@ export function TemplateEditor({
               {error}
             </div>
             {issues.length > 0 && (
-              <ul className="mt-2 list-disc list-inside text-xs text-red-700 space-y-0.5">
+              <ul className="mt-2 list-disc list-inside text-xs text-red-700 space-y-1">
                 {issues.map((i, idx) => (
                   <li key={idx}>
-                    <code>{i.path}</code> — {i.message}
+                    {humanizePath(i.path, pipeline)} — {i.message}
+                    <details className="ml-4 mt-0.5">
+                      <summary className="cursor-pointer text-[10px] text-red-600 hover:underline">
+                        Ver path técnico
+                      </summary>
+                      <code className="text-[10px]">{i.path}</code>
+                    </details>
                   </li>
                 ))}
               </ul>
